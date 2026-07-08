@@ -243,3 +243,308 @@ label{display:grid;gap:8px;color:#dce4f0}
 .danger-head p{margin:0;color:var(--muted);line-height:1.7}
 
 .sleep-control-card{display:grid!important;gap:14px;border-color:rgba(124,92,255,.35)!important;background:linear-gradient(145deg,rgba(79,70,229,.12),rgba(13,19,34,.96))!important}.sleep-control-card.sleep-active{border-color:rgba(33,212,167,.55)!important;box-shadow:0 0 0 1px rgba(33,212,167,.12) inset}.sleep-control-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.sleep-control-head h2{margin:.3rem 0 .45rem}.sleep-control-head>svg{color:var(--accent);flex:0 0 auto}
+
+.manager-primary-action button{width:100%;display:flex;align-items:center;gap:12px;text-align:right;padding:13px 15px;border:1px solid rgba(33,212,167,.55);border-radius:17px;background:linear-gradient(135deg,rgba(33,212,167,.10),rgba(124,92,255,.08));color:#fff}
+.manager-primary-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:#121a2b;color:var(--accent2);flex:0 0 auto}
+.manager-primary-action strong{display:block;font-size:1.02rem}.manager-primary-action small{display:block;color:var(--muted);margin-top:3px}
+.manager-quick-actions{display:flex;gap:8px;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}.manager-quick-actions::-webkit-scrollbar{display:none}
+.manager-quick-actions button{flex:0 0 auto;display:flex;align-items:center;gap:7px;padding:10px 12px;border-radius:13px;border:1px solid var(--line);background:#0d1322;color:#fff;white-space:nowrap}
+.manager-quick-actions svg{color:var(--accent)}.manager-quick-actions span{font-size:.86rem}
+.compact-gym-time{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:#101727}
+.compact-gym-time>div{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.9rem}.compact-gym-time svg{color:var(--accent2)}
+.compact-gym-time button{border:0;background:transparent;color:var(--accent2);font-weight:800;padding:6px 4px}
+@media(max-width:640px){.command-center{padding:14px}.manager-quick-actions button{padding:9px 11px}}
+
+
+/* ===== V8 Professional UX ===== */
+:root{
+  --surface-1:#0d1423;
+  --surface-2:#121b2d;
+  --surface-3:#182338;
+  --soft-border:rgba(148,163,184,.14);
+}
+
+.card,
+.command-center,
+.next-action-card,
+.sleep-control-card,
+.gym-live-card{
+  box-shadow:0 14px 40px rgba(0,0,0,.18);
+}
+
+.command-center-pro{
+  gap:14px;
+  padding:16px;
+  background:
+    radial-gradient(circle at top right,rgba(124,92,255,.12),transparent 38%),
+    var(--surface-1);
+  border:1px solid var(--soft-border);
+}
+
+.command-center-pro .command-center-head{
+  align-items:flex-start;
+}
+
+.command-center-pro .command-center-head p{
+  margin:.45rem 0 0;
+  max-width:560px;
+  line-height:1.7;
+}
+
+.icon-action{
+  width:42px;
+  height:42px;
+  border-radius:13px;
+  border:1px solid var(--soft-border);
+  background:var(--surface-2);
+  color:#dbe5f3;
+  display:grid;
+  place-items:center;
+  flex:0 0 auto;
+}
+
+.manager-now-button{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:13px 15px;
+  border-radius:16px;
+  border:1px solid rgba(33,212,167,.42);
+  background:linear-gradient(135deg,rgba(33,212,167,.12),rgba(6,182,212,.06));
+  color:#fff;
+  text-align:right;
+}
+
+.manager-now-icon{
+  width:42px;
+  height:42px;
+  border-radius:13px;
+  display:grid;
+  place-items:center;
+  background:rgba(33,212,167,.12);
+  color:var(--accent2);
+  flex:0 0 auto;
+}
+
+.manager-now-button strong,
+.context-actions strong{
+  display:block;
+  font-size:.98rem;
+}
+
+.manager-now-button small,
+.context-actions small{
+  display:block;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:.82rem;
+  line-height:1.45;
+}
+
+.context-actions{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:9px;
+}
+
+.context-actions button{
+  min-height:78px;
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  text-align:right;
+  padding:12px;
+  border-radius:15px;
+  border:1px solid var(--soft-border);
+  background:var(--surface-2);
+  color:#fff;
+}
+
+.context-actions button>svg{
+  color:#7183ff;
+  flex:0 0 auto;
+  margin-top:2px;
+}
+
+.context-actions button.active-state{
+  border-color:rgba(33,212,167,.5);
+  background:rgba(33,212,167,.08);
+}
+
+.context-actions button.active-state>svg{
+  color:var(--accent2);
+}
+
+.gym-live-card{
+  display:grid;
+  gap:16px;
+  padding:18px;
+  border-radius:22px;
+  border:1px solid rgba(33,212,167,.42);
+  background:
+    radial-gradient(circle at 15% 0%,rgba(33,212,167,.15),transparent 34%),
+    var(--surface-1);
+}
+
+.gym-live-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.gym-live-head>div{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:var(--accent2);
+  font-weight:800;
+}
+
+.gym-live-card h2{
+  margin:0;
+  font-size:1.35rem;
+  line-height:1.5;
+}
+
+.gym-live-tips{
+  display:grid;
+  gap:9px;
+}
+
+.gym-live-tips>div{
+  display:flex;
+  gap:10px;
+  padding:11px 12px;
+  border-radius:14px;
+  background:rgba(8,13,24,.65);
+  border:1px solid var(--soft-border);
+}
+
+.gym-live-tips svg{
+  color:#7c8cff;
+  flex:0 0 auto;
+}
+
+.gym-live-tips span{
+  display:grid;
+  gap:3px;
+}
+
+.gym-live-tips small{
+  color:var(--muted);
+  line-height:1.55;
+}
+
+.sleep-advice-card{
+  display:flex;
+  align-items:flex-start;
+  gap:14px;
+  padding:16px;
+  border-radius:18px;
+  background:linear-gradient(135deg,rgba(124,92,255,.12),rgba(17,24,39,.88));
+  border:1px solid rgba(124,92,255,.28);
+}
+
+.sleep-advice-icon{
+  width:58px;
+  height:58px;
+  border-radius:18px;
+  display:grid;
+  place-items:center;
+  background:rgba(124,92,255,.16);
+  color:#c4b5fd;
+  font-weight:900;
+  font-size:1.05rem;
+  flex:0 0 auto;
+}
+
+.sleep-advice-card h3{
+  margin:.25rem 0 .4rem;
+}
+
+.sleep-advice-card p{
+  margin:0;
+  color:var(--muted);
+  line-height:1.75;
+}
+
+.sleep-advice-card small{
+  display:block;
+  margin-top:.55rem;
+  color:#b7c2d3;
+  line-height:1.6;
+}
+
+.day-summary-bar{
+  border-radius:16px;
+  background:var(--surface-1);
+  border:1px solid var(--soft-border);
+  box-shadow:none;
+}
+
+.stats-grid{
+  gap:10px;
+}
+
+.stat-card{
+  border:1px solid var(--soft-border);
+  background:var(--surface-1);
+}
+
+.timeline-row{
+  border-radius:14px;
+}
+
+.bottom-nav{
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
+
+@media(max-width:640px){
+  .context-actions{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .context-actions button{
+    min-height:92px;
+    flex-direction:column;
+  }
+
+  .sleep-advice-card{
+    padding:14px;
+  }
+
+  .sleep-advice-icon{
+    width:50px;
+    height:50px;
+    border-radius:15px;
+  }
+}
+
+/* ===== V9 final refinements ===== */
+.sleep-control-card.sleep-minimal{
+  padding:12px 14px;
+  gap:10px;
+  box-shadow:none;
+  background:rgba(13,20,35,.92)!important;
+}
+.sleep-control-card.sleep-minimal .sleep-control-head h2{
+  font-size:1.05rem;
+  margin:.1rem 0 .25rem;
+}
+.sleep-control-card.sleep-minimal .sleep-control-head p{
+  font-size:.84rem;
+  line-height:1.5;
+}
+.sleep-control-card.sleep-minimal .sleep-control-head>svg{
+  width:24px;
+  height:24px;
+}
+.sleep-control-card.sleep-minimal .button-row{
+  gap:7px;
+}
+.sleep-control-card.sleep-minimal .button-row button{
+  min-height:42px;
+  padding:9px 11px;
+}

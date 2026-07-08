@@ -211,6 +211,123 @@ export async function setOutsideHome(userId: string) {
   await dailyTaskRepo.replaceDay(userId, day, [...tasks, guidance].sort((a, b) => a.timeMinutes - b.timeMinutes))
 }
 
+
+export async function departForGym(userId: string) {
+  const day = dateKey()
+  const checkIn = await checkInRepo.get(userId, day)
+
+  if (!checkIn) {
+    await startDayNow(userId, true)
+  } else {
+    await checkInRepo.save({
+      ...checkIn,
+      goingGym: true,
+      customGymTime: minutesToTimeInput(nowMinutes() + 20),
+    })
+  }
+
+  await addEvent(userId, 'gym_departed')
+  await regenerateDailyPlan(userId, day)
+
+  const tasks = await dailyTaskRepo.list(userId, day)
+  const now = nowMinutes()
+  const updated = tasks.map((task) => {
+    if (task.completed) return task
+    if (task.type === 'gym') {
+      return {
+        ...task,
+        timeMinutes: now + 20,
+        title: 'الوصول للجيم',
+        details: 'إنت في الطريق. أول ما تدخل الجيم اضغط «أنا في الجيم».',
+      }
+    }
+    if (task.type === 'water' && task.timeMinutes >= now) {
+      return {
+        ...task,
+        timeMinutes: now + 5,
+        details: 'اشرب شوية مياه قبل ما تبدأ التمرين.',
+      }
+    }
+    return task
+  })
+  await dailyTaskRepo.replaceDay(userId, day, updated.sort((a, b) => a.timeMinutes - b.timeMinutes))
+}
+
+export async function enterGym(userId: string) {
+  const day = dateKey()
+  await addEvent(userId, 'gym_started')
+
+  const tasks = await dailyTaskRepo.list(userId, day)
+  const now = nowMinutes()
+  const updated = tasks.map((task) =>
+    task.type === 'gym' && !task.completed
+      ? {
+          ...task,
+          completed: true,
+          response: 'done' as const,
+          timeMinutes: now,
+          title: 'بدأت الجيم',
+          details: 'تم تسجيل إنك دخلت الجيم.',
+        }
+      : task
+  )
+  await dailyTaskRepo.replaceDay(userId, day, updated)
+}
+
+export async function finishGym(userId: string) {
+  const day = dateKey()
+  await addEvent(userId, 'gym_finished')
+
+  const tasks = await dailyTaskRepo.list(userId, day)
+  const preferences = normalizePreferences(await preferencesRepo.get(userId), userId)
+  const creatineTaken = await creatineRepo.get(userId, day)
+  const now = nowMinutes()
+
+  const additions: DailyTask[] = [
+    {
+      userId,
+      dateKey: day,
+      timeMinutes: now + 5,
+      type: 'water',
+      title: 'اشرب مياه بعد الجيم',
+      details: 'ابدأ بمياه بهدوء بعد التمرين.',
+      completed: false,
+    },
+    {
+      userId,
+      dateKey: day,
+      timeMinutes: now + 30,
+      type: 'meal',
+      title: 'وجبة بعد الجيم',
+      details: 'اختار وجبة فيها مصدر بروتين واضح مع نشويات من الأكل المتاح عندك.',
+      completed: false,
+    },
+  ]
+
+  if (preferences.creatineEnabled && !creatineTaken) {
+    additions.push({
+      userId,
+      dateKey: day,
+      timeMinutes: now + 35,
+      type: 'creatine',
+      title: 'الكرياتين',
+      details: `لو لسه ماخدتوش، سجّل جرعتك المعتادة: ${preferences.creatineDoseG} جم.`,
+      completed: false,
+    })
+  }
+
+  const future = tasks.filter((task) => task.completed || task.timeMinutes > now + 45)
+  await dailyTaskRepo.replaceDay(
+    userId,
+    day,
+    [...future, ...additions].sort((a, b) => a.timeMinutes - b.timeMinutes),
+  )
+}
+
+export async function setInsideHome(userId: string) {
+  await addEvent(userId, 'inside_home')
+}
+
 export async function snoozeTaskAndReplan(task: DailyTask, minutes = 30) {
   if (!task.id) return
   await dailyTaskRepo.snooze(task.id, minutes)

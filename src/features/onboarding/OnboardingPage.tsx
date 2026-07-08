@@ -19,8 +19,6 @@ export default function OnboardingPage() {
   const [activity, setActivity] = useState<ActivityLevel>('moderate')
   const [trainingExperience, setTrainingExperience] = useState<TrainingExperience>('new')
   const [weightTrend, setWeightTrend] = useState<WeightTrend>('stable')
-  const [targetWakeTime, setTargetWakeTime] = useState('08:00')
-  const [sleepHours, setSleepHours] = useState('8')
   const [gymPeriod, setGymPeriod] = useState<GymPeriod>('auto')
   const [creatineEnabled, setCreatineEnabled] = useState(true)
   const [creatineDose, setCreatineDose] = useState('5')
@@ -48,8 +46,8 @@ export default function OnboardingPage() {
     await goalRepo.save({ userId, primary: finalRecommendation.goal, targetWeightKg: Number(weight) })
     await preferencesRepo.save({
       userId,
-      targetWakeTime,
-      desiredSleepHours: Number(sleepHours),
+      targetWakeTime: '08:00',
+      desiredSleepHours: 8,
       gymPeriod,
       creatineEnabled,
       creatineDoseG: Number(creatineDose),
@@ -127,9 +125,13 @@ export default function OnboardingPage() {
 
         {step === 3 && (
           <Card title="خلّي التطبيق يرتّب يومك">
-            <div className="form-grid">
-              <label>الوقت اللي تحب تثبت عليه الاستيقاظ<input type="time" value={targetWakeTime} onChange={(event) => setTargetWakeTime(event.target.value)} /></label>
-              <label>عدد ساعات النوم المستهدفة<input inputMode="decimal" value={sleepHours} onFocus={selectAll} onChange={(event) => setSleepHours(event.target.value.replace(/[^0-9.]/g, '').slice(0, 3))} /></label>
+            <div className="sleep-advice-card">
+              <div className="sleep-advice-icon"><span>8h</span></div>
+              <div>
+                <span className="eyebrow">نصيحة نوم — مش التزام</span>
+                <h3>حاول تقرّب من 8 ساعات لما تقدر</h3>
+                <p>إنت مش محتاج تحدد هتصحى إمتى. التطبيق هيحسب نومك من زر «أنا هنام الآن» و«أنا صحيت الآن». لو يومك مضغوط، 6 ساعات أفضل من نوم أقل، لكن التطبيق مش هيفرض عليك رقم.</p>
+              </div>
             </div>
             <h3>التطبيق يفضّل يحدد الجيم إمتى؟</h3>
             <div className="chips">

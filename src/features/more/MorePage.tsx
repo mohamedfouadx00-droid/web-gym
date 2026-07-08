@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FocusEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Download, Moon, Pill, Save, Sunrise, Trash2 } from 'lucide-react'
+import { Download, Moon, Pill, Save, Trash2 } from 'lucide-react'
 import { appSettings, db } from '../../data/db'
 import { creatineRepo, dailyTaskRepo, goalRepo, preferencesRepo, profileRepo } from '../../data/repositories'
-import { dateKey, formatTimeAr, goalLabels, normalizeGoal, normalizePreferences, recommendGoal, timeToMinutes } from '../../domain/dailyCoach'
+import { dateKey, goalLabels, normalizeGoal, normalizePreferences, recommendGoal } from '../../domain/dailyCoach'
 import type { ActivityLevel, GymPeriod, TrainingExperience, UserProfile, WeightTrend } from '../../domain/models'
 import { regenerateDailyPlan } from '../../services/planService'
 import { Button, Card, Page, Stat } from '../../components/UI'
@@ -28,8 +28,6 @@ export default function MorePage() {
   const [activity, setActivity] = useState<ActivityLevel>('moderate')
   const [trainingExperience, setTrainingExperience] = useState<TrainingExperience>('new')
   const [weightTrend, setWeightTrend] = useState<WeightTrend>('stable')
-  const [targetWakeTime, setTargetWakeTime] = useState('08:00')
-  const [sleepHours, setSleepHours] = useState('8')
   const [gymPeriod, setGymPeriod] = useState<GymPeriod>('auto')
   const [creatineEnabled, setCreatineEnabled] = useState(true)
   const [creatineDose, setCreatineDose] = useState('5')
@@ -51,12 +49,10 @@ export default function MorePage() {
   }, [profile])
 
   useEffect(() => {
-    setTargetWakeTime(preferences.targetWakeTime)
-    setSleepHours(String(preferences.desiredSleepHours))
     setGymPeriod(preferences.gymPeriod)
     setCreatineEnabled(preferences.creatineEnabled)
     setCreatineDose(String(preferences.creatineDoseG))
-  }, [preferences.targetWakeTime, preferences.desiredSleepHours, preferences.gymPeriod, preferences.creatineEnabled, preferences.creatineDoseG])
+  }, [preferences.gymPeriod, preferences.creatineEnabled, preferences.creatineDoseG])
 
   const profileDraft = useMemo<UserProfile>(() => ({
     id: profile?.id,
@@ -78,7 +74,7 @@ export default function MorePage() {
     await Promise.all([
       profileRepo.save(profileDraft),
       goalRepo.save({ ...goal, primary: recommendation.goal }),
-      preferencesRepo.save({ ...preferences, targetWakeTime, desiredSleepHours: Number(sleepHours), gymPeriod, creatineEnabled, creatineDoseG: Number(creatineDose) }),
+      preferencesRepo.save({ ...preferences, targetWakeTime: '08:00', desiredSleepHours: 8, gymPeriod, creatineEnabled, creatineDoseG: Number(creatineDose) }),
     ])
     await regenerateDailyPlan(userId, today)
     setSaved(true)
@@ -126,15 +122,13 @@ export default function MorePage() {
     URL.revokeObjectURL(link.href)
   }
 
-  const wakeMinutes = timeToMinutes(targetWakeTime)
-  const bedtimeMinutes = wakeMinutes - Number(sleepHours || 8) * 60
 
   return (
     <Page title="المزيد" subtitle="حدّث بياناتك، والتطبيق يعيد اختيار الهدف وترتيب اليوم تلقائيًا">
       <div className="stats-grid">
         <Stat label="هدفك الأنسب حاليًا" value={goalLabels[recommendation.goal]} />
-        <Stat label="الاستيقاظ المستهدف" value={formatTimeAr(wakeMinutes)} />
-        <Stat label="النوم المستهدف" value={`${sleepHours} ساعات`} />
+        <Stat label="نصيحة النوم" value="قرّب من 8 ساعات" hint="مش شرط تلتزم بميعاد ثابت" />
+        <Stat label="تسجيل النوم" value="تلقائي" hint="من هنام الآن / صحيت الآن" />
         <Stat label="الكرياتين اليوم" value={creatineEnabled ? (creatineLog ? 'تم أخذه' : 'لسه') : 'غير مفعل'} />
       </div>
 
@@ -165,11 +159,15 @@ export default function MorePage() {
         <p className="safety-note">التوصية مبدئية لتنظيم الأكل وليست تشخيصًا طبيًا. أي حالة مرضية أو تعليمات علاجية لها الأولوية.</p>
       </Card>
 
-      <Card title="نظام نومي">
-        <div className="sleep-preview"><Sunrise /><div><span>اصحى تقريبًا</span><strong>{formatTimeAr(wakeMinutes)}</strong></div><Moon /><div><span>ابدأ نومك تقريبًا</span><strong>{formatTimeAr(bedtimeMinutes)}</strong></div></div>
-        <div className="form-grid">
-          <label>ميعاد الاستيقاظ المستهدف<input type="time" value={targetWakeTime} onChange={(event) => setTargetWakeTime(event.target.value)} /></label>
-          <label>ساعات النوم<input inputMode="decimal" value={sleepHours} onFocus={selectAll} onChange={(event) => setSleepHours(event.target.value.replace(/[^0-9.]/g, '').slice(0, 3))} /></label>
+      <Card title="نظام النوم">
+        <div className="sleep-advice-card">
+          <div className="sleep-advice-icon"><span>8h</span></div>
+          <div>
+            <span className="eyebrow">نصيحة فقط</span>
+            <h3>الأفضل تقرّب من 8 ساعات لما تقدر</h3>
+            <p>مفيش سؤال عن ميعاد الاستيقاظ المستهدف. التطبيق بيحسب نومك من وقت ما تضغط «أنا هنام الآن» لحد «أنا صحيت الآن». ولو نسيت، تقدر تضيف وقت النوم يدويًا.</p>
+            <small>لو يومك مضغوط، 6 ساعات أفضل من نوم أقل — لكن ده مش هدف مفروض عليك.</small>
+          </div>
         </div>
       </Card>
 

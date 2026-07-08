@@ -23,7 +23,6 @@ import {
   creatineRepo,
   dailyTaskRepo,
   dayEventRepo,
-  dayReviewRepo,
   goalRepo,
   preferencesRepo,
   profileRepo,
@@ -43,10 +42,13 @@ import {
   failedToSleep,
   recordMissedSleepTime,
   rescueMessyDay,
-  returnedFromGym,
   setCustomGymTime,
   setGymNow,
   setOutsideHome,
+  setInsideHome,
+  departForGym,
+  enterGym,
+  finishGym,
   snoozeTaskAndReplan,
   startDayNow,
   startSleepNow,
@@ -88,22 +90,16 @@ export default function HomePage() {
   const creatineLog = useLiveQuery(() => creatineRepo.get(userId, today), [userId, today])
   const events = useLiveQuery(() => dayEventRepo.list(userId, today), [userId, today]) ?? []
   const allEvents = useLiveQuery(() => dayEventRepo.listAll(userId), [userId]) ?? []
-  const review = useLiveQuery(() => dayReviewRepo.get(userId, today), [userId, today])
 
   const [goingGym, setGoingGym] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showWhy, setShowWhy] = useState(false)
-  const [showReview, setShowReview] = useState(false)
   const [showGymTime, setShowGymTime] = useState(false)
   const [showMissedSleep, setShowMissedSleep] = useState(false)
   const [missedBedtime, setMissedBedtime] = useState('23:30')
   const [sleepSaveMessage, setSleepSaveMessage] = useState('')
   const [sleepActionMessage, setSleepActionMessage] = useState('')
   const [customGymTime, setCustomGymTimeValue] = useState('18:00')
-  const [foodAdherence, setFoodAdherence] = useState(7)
-  const [waterAdherence, setWaterAdherence] = useState(7)
-  const [energy, setEnergy] = useState(7)
-  const [reviewGym, setReviewGym] = useState(checkIn?.goingGym ?? false)
 
   const goal = normalizeGoal(rawGoal, userId)
   const preferences = normalizePreferences(rawPreferences, userId)
@@ -116,6 +112,23 @@ export default function HomePage() {
   )
   const isTryingToSleep = lastSleepEvent?.type === 'sleep_started'
   const lastSleepFailed = lastSleepEvent?.type === 'sleep_failed'
+  const lastGymEvent = [...events].reverse().find((event) =>
+    event.type === 'gym_departed' || event.type === 'gym_started' || event.type === 'gym_finished'
+  )
+  const gymStage = lastGymEvent?.type === 'gym_started'
+    ? 'in_gym'
+    : lastGymEvent?.type === 'gym_departed'
+      ? 'on_the_way'
+      : lastGymEvent?.type === 'gym_finished'
+        ? 'finished'
+        : 'idle'
+  const lastLocationEvent = [...events].reverse().find((event) =>
+    event.type === 'outside_home' || event.type === 'inside_home'
+  )
+  const isOutsideHome = lastLocationEvent?.type === 'outside_home'
+  const availableFoodIds = new Set(available.map((item) => item.foodId))
+  const hasJuice = availableFoodIds.has('orange-juice') || availableFoodIds.has('fresh-juice')
+  const hasQuickCarb = availableFoodIds.has('banana') || availableFoodIds.has('dates')
 
   async function wakeNow() {
     setSaving(true)
@@ -164,19 +177,6 @@ export default function HomePage() {
     }
   }
 
-  async function saveReview() {
-    await dayReviewRepo.save({
-      userId,
-      dateKey: today,
-      foodAdherence,
-      waterAdherence,
-      energy,
-      wentGym: reviewGym,
-      creatineTaken: Boolean(creatineLog),
-      createdAt: new Date().toISOString(),
-    })
-    setShowReview(false)
-  }
 
   async function saveCustomGymTime() {
     await setCustomGymTime(userId, customGymTime)
@@ -185,7 +185,7 @@ export default function HomePage() {
 
   return (
     <Page title={`أهلاً ${profile?.name ?? ''}`} subtitle="قول لي اللي حصل دلوقتي، وأنا أرتب لك الخطوة الجاية">
-      {!checkIn ? (
+      {!isTryingToSleep && (!checkIn ? (
         <Card className="daily-checkin-card">
           <span className="eyebrow">بداية اليوم</span>
           <h2>ما تكتبش ساعة الاستيقاظ</h2>
@@ -206,16 +206,16 @@ export default function HomePage() {
           {checkIn.sleepHours && <div><Moon size={18} /><span>نوم تقريبي {checkIn.sleepHours} ساعة</span></div>}
           <div>{checkIn.goingGym ? <><Dumbbell size={18} /><span>يوم جيم</span></> : <><Moon size={18} /><span>يوم بدون جيم</span></>}</div>
         </div>
-      )}
+      ))}
 
-      <Card className={`sleep-control-card ${isTryingToSleep ? 'sleep-active' : ''}`}>
+      <Card className={`sleep-control-card ${isTryingToSleep ? 'sleep-active sleep-minimal' : ''}`}>
         <div className="sleep-control-head">
           <div>
             <span className="eyebrow">النوم</span>
-            <h2>{isTryingToSleep ? 'إنت مسجل إنك بتحاول تنام الآن' : lastSleepFailed ? 'النوم ماجاش آخر مرة' : 'جاهز للنوم؟'}</h2>
+            <h2>{isTryingToSleep ? 'وضع النوم شغال الآن' : lastSleepFailed ? 'النوم ماجاش آخر مرة' : 'جاهز للنوم؟'}</h2>
             <p className="muted">
               {isTryingToSleep
-                ? 'لو نمت، لما تصحى اضغط «أنا صحيت الآن». لو لسه صاحي ومش قادر تنام، اضغط «مقدرتش أنام».'
+                ? 'أخفينا كل تفاصيل اليوم مؤقتًا. لما تصحى اضغط «أنا صحيت الآن»، ولو النوم مجاش اضغط «مقدرتش أنام».'
                 : lastSleepFailed
                   ? 'لما تبقى جاهز جرّب محاولة جديدة، والوقت الجديد هو اللي هيتحسب.'
                   : 'اضغط وقت ما تدخل السرير فعلًا، مش قبلها بساعات.'}
@@ -250,42 +250,83 @@ export default function HomePage() {
         <Card className="success-card"><Check size={24} /><div><h2>تحديث النوم</h2><p>{sleepActionMessage}</p></div></Card>
       )}
 
-      {checkIn && (
-        <section className="command-center">
+      {!isTryingToSleep && checkIn && (
+        <section className="command-center command-center-pro">
           <div className="command-center-head">
-            <div><span className="eyebrow">مدير يومك</span><h2>إيه اللي حصل دلوقتي؟</h2></div>
-            <Button variant="secondary" onClick={async () => regenerateDailyPlan(userId, today)}><RefreshCw size={17} /> أعد ترتيب اليوم</Button>
+            <div>
+              <span className="eyebrow">مدير يومك</span>
+              <h2>اعمل الخطوة المناسبة بس</h2>
+              <p className="muted">الخيارات بتتغير حسب حالتك، عشان مفيش أزرار ملهاش لازمة أو حاجات مكررة.</p>
+            </div>
+            <button className="icon-action" onClick={async () => regenerateDailyPlan(userId, today)} title="أعد ترتيب اليوم"><RefreshCw size={19} /></button>
           </div>
-          <div className="quick-command-grid">
-            <button onClick={() => setShowWhy(!showWhy)}><Sparkles /><strong>ماذا أفعل الآن؟</strong><span>اعرف أهم خطوة وسببها</span></button>
-            <button onClick={async () => setGymNow(userId)}><Dumbbell /><strong>أنا رايح الجيم الآن</strong><span>عدّل اليوم حول الجيم</span></button>
-            <button onClick={async () => returnedFromGym(userId)}><Check /><strong>رجعت من الجيم</strong><span>مياه + أكل + كرياتين</span></button>
-            <button onClick={async () => rescueMessyDay(userId)}><AlarmClock /><strong>يومي اتلخبط</strong><span>أنقذ باقي اليوم</span></button>
-            <button onClick={async () => setOutsideHome(userId)}><House /><strong>أنا بره البيت</strong><span>اختيار عملي من المتاح</span></button>
-            <button onClick={() => setShowMissedSleep(true)}><Clock3 /><strong>نسيت أسجل نوم امبارح</strong><span>أدخل وقت النوم يدويًا</span></button>
-            <button onClick={() => setShowReview(true)}><Check /><strong>هخلص يومي</strong><span>تقييم سريع في 10 ثوانٍ</span></button>
+
+          <button className="manager-now-button" onClick={() => setShowWhy(!showWhy)}>
+            <span className="manager-now-icon"><Sparkles /></span>
+            <span><strong>ماذا أفعل الآن؟</strong><small>أهم خطوة وسببها</small></span>
+          </button>
+
+          <div className="context-actions">
+            {checkIn.goingGym && gymStage === 'idle' && (
+              <button onClick={() => departForGym(userId)}><Dumbbell /><span><strong>رايح الجيم</strong><small>ابدأ رحلة الجيم</small></span></button>
+            )}
+            {checkIn.goingGym && gymStage === 'on_the_way' && (
+              <button onClick={() => enterGym(userId)}><Dumbbell /><span><strong>أنا في الجيم</strong><small>فعّل وضع التمرين</small></span></button>
+            )}
+            <button
+              className={isOutsideHome ? 'active-state' : ''}
+              onClick={() => isOutsideHome ? setInsideHome(userId) : setOutsideHome(userId)}
+            >
+              <House />
+              <span>
+                <strong>{isOutsideHome ? 'رجعت البيت' : 'أنا بره البيت'}</strong>
+                <small>{isOutsideHome ? 'اقفل وضع خارج البيت' : 'فعّل اختيارات مناسبة للخروج'}</small>
+              </span>
+            </button>
+            <button onClick={async () => rescueMessyDay(userId)}><AlarmClock /><span><strong>يومي اتلخبط</strong><small>أعد ترتيب الباقي</small></span></button>
           </div>
-          {showWhy && <div className="why-box"><strong>{action?.title ?? 'لا توجد خطوة معلقة'}</strong><p>{actionExplanation(action)}</p></div>}
+
+          {showWhy && (
+            <div className="why-box">
+              <strong>{action?.title ?? 'لا توجد خطوة معلقة'}</strong>
+              <p>{actionExplanation(action)}</p>
+            </div>
+          )}
         </section>
       )}
 
-      {sleepSaveMessage && <Card className="success-card"><Check size={24} /><div><h2>تحديث النوم</h2><p>{sleepSaveMessage}</p></div></Card>}
-
-      {checkIn?.goingGym && gymTask && (
-        <Card className="gym-time-card">
-          <div className="gym-time-main"><Dumbbell size={30} /><div><span className="eyebrow">ميعاد الجيم المقترح</span><h2>{formatTimeAr(gymTask.timeMinutes)}</h2><p>الموقع اختاره حسب وقت صحوك وترتيب الوجبات.</p></div></div>
-          <div className="button-row"><Button onClick={() => setGymNow(userId)}>هروح دلوقتي</Button><Button variant="secondary" onClick={() => setShowGymTime(true)}>مش هقدر، أحدد وقت</Button></div>
-        </Card>
+      {!isTryingToSleep && gymStage === 'in_gym' && (
+        <section className="gym-live-card">
+          <div className="gym-live-head">
+            <div>
+              <span className="live-dot" />
+              <span>أنت في الجيم الآن</span>
+            </div>
+            <Dumbbell size={26} />
+          </div>
+          <h2>خليك مركز في التمرين، والموقع يهتم بالتفاصيل الصغيرة</h2>
+          <div className="gym-live-tips">
+            <div><Waves /><span><strong>المياه</strong><small>خد رشفات منتظمة أثناء التمرين، خصوصًا لو الجو حر أو عرقت كتير.</small></span></div>
+            {hasJuice && <div><Utensils /><span><strong>عندك عصير ضمن المتاح</strong><small>لو محتاج طاقة سريعة، اشرب كمية صغيرة بهدوء بدل ما تشرب كمية كبيرة مرة واحدة.</small></span></div>}
+            {hasQuickCarb && <div><Utensils /><span><strong>عندك موز أو تمر</strong><small>ممكن تستخدم كمية بسيطة عند الحاجة للطاقة، مش لازم تاكلهم لمجرد إنهم موجودين.</small></span></div>}
+            <div><AlarmClock /><span><strong>علامات التوقف</strong><small>لو حسيت بدوخة أو ألم غير طبيعي، اقف وخد راحة وما تكملش بالعافية.</small></span></div>
+          </div>
+          <Button onClick={() => finishGym(userId)}><Check size={18} /> خلصت الجيم</Button>
+        </section>
       )}
 
-      {checkIn && available.length === 0 && (
+      {!isTryingToSleep && sleepSaveMessage && <Card className="success-card"><Check size={24} /><div><h2>تحديث النوم</h2><p>{sleepSaveMessage}</p></div></Card>}
+
+      
+
+      {!isTryingToSleep && checkIn && available.length === 0 && (
         <Card className="attention-card">
           <Apple size={28} /><div><h2>لسه محتاج أعرف الأكل المتاح عندك</h2><p>اختار الموجود في البيت والكميات التقريبية، وبعدها هقولك تاكل إيه وفي أي وقت.</p></div>
           <Link to="/food"><Button>حدد الأكل المتاح</Button></Link>
         </Card>
       )}
 
-      {checkIn && action && (
+      {!isTryingToSleep && checkIn && action && (
         <section className="next-action-card">
           <div className="next-action-top"><span className="live-dot" /> الخطوة الأهم الآن</div>
           <div className="next-action-main">
@@ -300,7 +341,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {checkIn && !action && tasks.length > 0 && <Card><EmptyState text="خلصت خطوات اليوم المسجلة. ممتاز — قيّم يومك قبل النوم." /></Card>}
+      {!isTryingToSleep && checkIn && !action && tasks.length > 0 && <Card><EmptyState text="خلصت خطوات اليوم المسجلة. التقدم هيتحسب تلقائيًا من اللي سجلته." /></Card>}
 
       {targets && (
         <div className="stats-grid">
@@ -312,7 +353,14 @@ export default function HomePage() {
         </div>
       )}
 
-      {checkIn && tasks.length > 0 && (
+      {!isTryingToSleep && checkIn?.goingGym && (
+        <div className="compact-gym-time">
+          <div><Dumbbell size={18} /><span>لو ناوي تروح الجيم في ساعة معينة</span></div>
+          <button onClick={() => setShowGymTime(true)}>حدد الساعة</button>
+        </div>
+      )}
+
+      {!isTryingToSleep && checkIn && tasks.length > 0 && (
         <Card title="خطة يومك بالترتيب">
           <div className="timeline">
             {tasks.map((task) => {
@@ -334,13 +382,7 @@ export default function HomePage() {
         </Card>
       )}
 
-      {lastEvent && (
-        <Card title="آخر تحديث في يومك">
-          <p className="muted">{lastEvent.type === 'woke_now' ? 'تم تسجيل إنك صحيت.' : lastEvent.type === 'sleep_started' ? 'تم تسجيل إنك بدأت تحاول تنام.' : lastEvent.type === 'sleep_failed' ? 'سجلنا إن النوم مجاش، وتمت إضافة محاولة أهدأ.' : lastEvent.type === 'gym_now' ? 'تم تعديل اليوم لأنك رايح الجيم الآن.' : lastEvent.type === 'returned_gym' ? 'تم ترتيب ما بعد الجيم.' : lastEvent.type === 'day_messy' ? 'تم إنقاذ باقي اليوم.' : 'تم تفعيل وضع خارج البيت.'}</p>
-        </Card>
-      )}
 
-      {review && <Card className="success-card"><Check size={24} /><div><h2>تقييم اليوم محفوظ</h2><p>طاقة {review.energy}/10 · أكل {review.foodAdherence}/10 · مياه {review.waterAdherence}/10</p></div></Card>}
 
       {showGymTime && (
         <div className="modal-backdrop" onClick={() => setShowGymTime(false)}>
@@ -369,18 +411,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {showReview && (
-        <div className="modal-backdrop" onClick={() => setShowReview(false)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h2>تقييم سريع لليوم</h2>
-            <label>التزام الأكل: {foodAdherence}/10<input type="range" min="1" max="10" value={foodAdherence} onChange={(event) => setFoodAdherence(Number(event.target.value))} /></label>
-            <label>التزام المياه: {waterAdherence}/10<input type="range" min="1" max="10" value={waterAdherence} onChange={(event) => setWaterAdherence(Number(event.target.value))} /></label>
-            <label>طاقتك اليوم: {energy}/10<input type="range" min="1" max="10" value={energy} onChange={(event) => setEnergy(Number(event.target.value))} /></label>
-            <label className="toggle-row"><input type="checkbox" checked={reviewGym} onChange={(event) => setReviewGym(event.target.checked)} /><span>ذهبت للجيم اليوم</span></label>
-            <div className="button-row"><Button onClick={saveReview}>حفظ التقييم</Button><Button variant="secondary" onClick={() => setShowReview(false)}>إلغاء</Button></div>
-          </div>
-        </div>
-      )}
     </Page>
   )
 }
