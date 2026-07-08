@@ -5,7 +5,7 @@ export type WeightTrend = 'losing' | 'stable' | 'gaining'
 export type GymPeriod = 'auto' | 'afternoon' | 'evening'
 export type DailyTaskType = 'water' | 'meal' | 'gym' | 'creatine' | 'sleep' | 'checkin'
 export type FoodCategory = 'protein' | 'carb' | 'dairy' | 'fruit' | 'fat' | 'vegetable'
-export type DayEventType = 'woke_now' | 'gym_now' | 'returned_gym' | 'day_messy' | 'outside_home'
+export type DayEventType = 'woke_now' | 'sleep_started' | 'sleep_failed' | 'gym_now' | 'returned_gym' | 'day_messy' | 'outside_home'
 export type TaskResponse = 'done' | 'snoozed' | 'unavailable'
 
 export interface User {
@@ -70,6 +70,7 @@ export interface DailyCheckIn {
   wakeTime: string
   sleepHours?: number
   goingGym: boolean
+  customGymTime?: string
 }
 
 export interface DailyTask {

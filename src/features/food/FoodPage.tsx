@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Check, Search, Sparkles } from 'lucide-react'
+import { Check, ChefHat, Search, Sparkles } from 'lucide-react'
 import { appSettings } from '../../data/db'
 import { availableFoodRepo, checkInRepo, mealPlanRepo } from '../../data/repositories'
 import { foodCatalog } from '../../data/foodCatalog'
+import { getAvailableSpecialRecipes } from '../../data/specialRecipes'
 import { dateKey, formatTimeAr } from '../../domain/dailyCoach'
 import type { FoodCategory } from '../../domain/models'
 import { regenerateDailyPlan } from '../../services/planService'
@@ -20,7 +21,7 @@ const categories: Array<{ id: FoodCategory | 'all'; label: string }> = [
 ]
 
 interface FoodDraft {
-  quantity: number
+  quantity: string
   unit: string
 }
 
@@ -41,7 +42,7 @@ export default function FoodPage() {
     setSelected(new Set(rows.map((row) => row.foodId)))
     const next: Record<string, FoodDraft> = {}
     rows.forEach((row) => {
-      next[row.foodId] = { quantity: row.quantity || 1, unit: row.unit || 'حصة' }
+      next[row.foodId] = { quantity: String(row.quantity || 1), unit: row.unit || 'حصة' }
     })
     setDrafts(next)
   }, [rows])
@@ -51,6 +52,8 @@ export default function FoodPage() {
     const matchesCategory = category === 'all' || food.category === category
     return matchesSearch && matchesCategory
   }), [query, category])
+
+  const specialRecipes = useMemo(() => getAvailableSpecialRecipes(Array.from(selected)), [selected])
 
   function defaultUnit(foodId: string) {
     const food = foodCatalog.find((item) => item.id === foodId)
@@ -66,7 +69,7 @@ export default function FoodPage() {
       if (next.has(id)) next.delete(id)
       else {
         next.add(id)
-        setDrafts((items) => ({ ...items, [id]: items[id] ?? { quantity: 1, unit: defaultUnit(id) } }))
+        setDrafts((items) => ({ ...items, [id]: items[id] ?? { quantity: '', unit: defaultUnit(id) } }))
       }
       return next
     })
@@ -75,7 +78,7 @@ export default function FoodPage() {
   function updateDraft(id: string, patch: Partial<FoodDraft>) {
     setDrafts((current) => ({
       ...current,
-      [id]: { ...(current[id] ?? { quantity: 1, unit: defaultUnit(id) }), ...patch },
+      [id]: { ...(current[id] ?? { quantity: '', unit: defaultUnit(id) }), ...patch },
     }))
   }
 
@@ -96,7 +99,7 @@ export default function FoodPage() {
 
   return (
     <Page title="أكلي النهارده" subtitle="قول لي الموجود عندك والكميات التقريبية، وأنا أبني اليوم من الواقع">
-      {!checkIn && <Card className="attention-card"><div><h2>ابدأ من صفحة اليوم أولًا</h2><p>قول للتطبيق صحيت إمتى وهل هتروح الجيم، وبعدها ارجع اختار الأكل المتاح.</p></div></Card>}
+      {!checkIn && <Card className="attention-card"><div><h2>ابدأ من صفحة اليوم أولًا</h2><p>اضغط «أنا صحيت الآن»، وبعدها ارجع اختار الأكل المتاح.</p></div></Card>}
 
       <Card title="إيه الموجود عندك؟">
         <div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن أكل" /></div>
@@ -105,7 +108,7 @@ export default function FoodPage() {
         <div className="food-select-grid">
           {visibleFoods.map((food) => {
             const active = selected.has(food.id)
-            const draft = drafts[food.id] ?? { quantity: 1, unit: defaultUnit(food.id) }
+            const draft = drafts[food.id] ?? { quantity: '', unit: defaultUnit(food.id) }
             return (
               <article key={food.id} className={`food-select-card quantity-card ${active ? 'selected' : ''}`}>
                 <button className="food-card-main" onClick={() => toggle(food.id)}>
@@ -116,7 +119,7 @@ export default function FoodPage() {
                 </button>
                 {active && (
                   <div className="food-quantity-row">
-                    <label>الكمية<input type="number" min="0.1" step="0.5" value={draft.quantity} onChange={(event) => updateDraft(food.id, { quantity: Number(event.target.value) })} /></label>
+                    <label>الكمية<input inputMode="decimal" value={draft.quantity} placeholder="اكتب الكمية" onFocus={(event) => event.currentTarget.select()} onChange={(event) => updateDraft(food.id, { quantity: event.target.value.replace(/[^0-9.]/g, '').slice(0, 7) })} /></label>
                     <label>الوحدة<input value={draft.unit} onChange={(event) => updateDraft(food.id, { unit: event.target.value })} /></label>
                   </div>
                 )}
@@ -130,6 +133,22 @@ export default function FoodPage() {
           <Button disabled={saving || selected.size === 0} onClick={saveAndBuild}><Sparkles size={17} /> {saving ? 'ببني يومك...' : 'احفظ وابني أكلي'}</Button>
         </div>
       </Card>
+
+      {specialRecipes.length > 0 && (
+        <Card title="وجبات اسبيشيال من الموجود عندك">
+          <p className="muted">الوجبات دي بتظهر فقط لما المكونات الأساسية تكون عندك.</p>
+          <div className="special-recipes-grid">
+            {specialRecipes.map((recipe) => (
+              <article key={recipe.id} className="special-recipe-card">
+                <div className="recipe-title"><ChefHat size={24} /><div><h2>{recipe.title}</h2><p>{recipe.subtitle}</p></div></div>
+                <div className="recipe-section"><strong>المكونات</strong><ul>{recipe.ingredients.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                <div className="recipe-section"><strong>طريقة التحضير</strong><ol>{recipe.steps.map((step) => <li key={step}>{step}</li>)}</ol></div>
+                <div className="recipe-note"><span>{recipe.bestTime}</span><small>{recipe.note}</small></div>
+              </article>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {meals.length > 0 ? (
         <>

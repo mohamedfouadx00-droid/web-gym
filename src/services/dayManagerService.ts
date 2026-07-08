@@ -19,12 +19,109 @@ async function addEvent(userId: string, type: DayEventType, note?: string) {
   await dayEventRepo.add({ userId, dateKey: day, type, note, createdAt: new Date().toISOString() })
 }
 
+function hoursBetween(startIso: string, end: Date): number | undefined {
+  const start = new Date(startIso)
+  const diff = end.getTime() - start.getTime()
+  if (!Number.isFinite(diff) || diff <= 0 || diff > 20 * 60 * 60 * 1000) return undefined
+  return Number((diff / 3_600_000).toFixed(1))
+}
+
+
+function dateAtTimeBefore(reference: Date, time: string): Date | undefined {
+  const [hours, minutes] = time.split(':').map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return undefined
+  const candidate = new Date(reference)
+  candidate.setHours(hours, minutes, 0, 0)
+  if (candidate.getTime() >= reference.getTime()) candidate.setDate(candidate.getDate() - 1)
+  return candidate
+}
+
+export async function recordMissedSleepTime(userId: string, bedtime: string, goingGym = true) {
+  const day = dateKey()
+  const existingCheckIn = await checkInRepo.get(userId, day)
+  const now = new Date()
+  const wakeReference = existingCheckIn
+    ? (() => {
+        const wake = new Date()
+        const [hours, minutes] = existingCheckIn.wakeTime.split(':').map(Number)
+        wake.setHours(hours, minutes, 0, 0)
+        return wake
+      })()
+    : now
+
+  const sleepStart = dateAtTimeBefore(wakeReference, bedtime)
+  if (!sleepStart) return undefined
+  const sleepHours = hoursBetween(sleepStart.toISOString(), wakeReference)
+  if (!sleepHours) return undefined
+
+  await dayEventRepo.add({
+    userId,
+    dateKey: dateKey(sleepStart),
+    type: 'sleep_started',
+    note: `وقت نوم مضاف يدويًا: ${bedtime}`,
+    createdAt: sleepStart.toISOString(),
+  })
+
+  const wakeTime = existingCheckIn?.wakeTime ?? minutesToTimeInput(now.getHours() * 60 + now.getMinutes())
+  await checkInRepo.save({
+    userId,
+    dateKey: day,
+    wakeTime,
+    sleepHours,
+    goingGym: existingCheckIn?.goingGym ?? goingGym,
+    customGymTime: existingCheckIn?.customGymTime,
+  })
+
+  if (!existingCheckIn) {
+    await addEvent(userId, 'woke_now', `نوم تقريبي ${sleepHours} ساعة — وقت النوم أضيف يدويًا`)
+  }
+
+  await regenerateDailyPlan(userId, day)
+  return sleepHours
+}
+
 export async function startDayNow(userId: string, goingGym = true) {
   const day = dateKey()
   const now = new Date()
   const wakeTime = minutesToTimeInput(now.getHours() * 60 + now.getMinutes())
-  await checkInRepo.save({ userId, dateKey: day, wakeTime, goingGym })
-  await addEvent(userId, 'woke_now')
+  const lastSleep = await dayEventRepo.latestByType(userId, 'sleep_started')
+  const sleepHours = lastSleep ? hoursBetween(lastSleep.createdAt, now) : undefined
+  await checkInRepo.save({ userId, dateKey: day, wakeTime, sleepHours, goingGym })
+  await addEvent(userId, 'woke_now', sleepHours ? `نوم تقريبي ${sleepHours} ساعة` : undefined)
+  return regenerateDailyPlan(userId, day)
+}
+
+export async function startSleepNow(userId: string) {
+  const now = new Date()
+  await addEvent(userId, 'sleep_started', `بدأ محاولة النوم ${now.toISOString()}`)
+  const day = dateKey()
+  const tasks = await dailyTaskRepo.list(userId, day)
+  const updated = tasks.map((task) => task.type === 'sleep' && !task.completed ? { ...task, completed: true, response: 'done' as const } : task)
+  await dailyTaskRepo.replaceDay(userId, day, updated)
+}
+
+export async function failedToSleep(userId: string) {
+  await addEvent(userId, 'sleep_failed')
+  const day = dateKey()
+  const tasks = await dailyTaskRepo.list(userId, day)
+  const now = nowMinutes()
+  const guidance: DailyTask = {
+    userId,
+    dateKey: day,
+    timeMinutes: now + 5,
+    type: 'sleep',
+    title: 'محاولة نوم هادئة من جديد',
+    details: 'ابعد الموبايل والإضاءة القوية، اعمل حاجة هادئة 15–20 دقيقة، وبعدها جرّب تنام من جديد. ما تضغطش على نفسك إنك لازم تنام فورًا.',
+    completed: false,
+  }
+  await dailyTaskRepo.replaceDay(userId, day, [...tasks.filter((task) => task.completed || task.type !== 'sleep'), guidance].sort((a, b) => a.timeMinutes - b.timeMinutes))
+}
+
+export async function setCustomGymTime(userId: string, customGymTime: string) {
+  const day = dateKey()
+  const checkIn = await checkInRepo.get(userId, day)
+  if (!checkIn) return
+  await checkInRepo.save({ ...checkIn, goingGym: true, customGymTime })
   return regenerateDailyPlan(userId, day)
 }
 
@@ -32,7 +129,7 @@ export async function setGymNow(userId: string) {
   const day = dateKey()
   const checkIn = await checkInRepo.get(userId, day)
   if (!checkIn) await startDayNow(userId, true)
-  else if (!checkIn.goingGym) await checkInRepo.save({ ...checkIn, goingGym: true })
+  else await checkInRepo.save({ ...checkIn, goingGym: true, customGymTime: minutesToTimeInput(nowMinutes() + 20) })
 
   await addEvent(userId, 'gym_now')
   await regenerateDailyPlan(userId, day)
@@ -116,5 +213,5 @@ export async function unavailableTaskAndReplan(userId: string, task: DailyTask) 
 
 export function actionExplanation(task: DailyTask | undefined) {
   if (!task) return 'لا توجد خطوة معلقة الآن.'
-  return `الخطوة الأنسب الآن هي «${task.title}» في حوالي ${formatTimeAr(task.timeMinutes)} لأن خطة اليوم مرتبة حسب استيقاظك والجيم والأكل المتاح.`
+  return `الخطوة الأنسب الآن هي «${task.title}» في حوالي ${formatTimeAr(task.timeMinutes)} لأن خطة اليوم مرتبة حسب وقت صحوك الفعلي والجيم والأكل المتاح.`
 }

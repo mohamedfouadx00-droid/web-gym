@@ -16,6 +16,7 @@ export const foodCatalog: FoodCatalogItem[] = [
   { id: 'pasta', nameAr: 'مكرونة مطبوخة', category: 'carb', servingLabel: '180 جم', calories: 280, protein: 10, carbs: 55, fats: 2 },
   { id: 'banana', nameAr: 'موز', category: 'fruit', servingLabel: 'ثمرة', calories: 105, protein: 1.3, carbs: 27, fats: 0.3 },
   { id: 'apple', nameAr: 'تفاح', category: 'fruit', servingLabel: 'ثمرة', calories: 95, protein: 0.5, carbs: 25, fats: 0.3 },
+  { id: 'honey', nameAr: 'عسل', category: 'carb', servingLabel: 'ملعقة صغيرة', calories: 21, protein: 0, carbs: 5.7, fats: 0 },
   { id: 'dates', nameAr: 'تمر', category: 'fruit', servingLabel: '3 تمرات', calories: 70, protein: 0.6, carbs: 18, fats: 0.1 },
   { id: 'peanut-butter', nameAr: 'زبدة فول سوداني', category: 'fat', servingLabel: 'ملعقة كبيرة', calories: 95, protein: 4, carbs: 3.5, fats: 8 },
   { id: 'olive-oil', nameAr: 'زيت زيتون', category: 'fat', servingLabel: 'ملعقة كبيرة', calories: 119, protein: 0, carbs: 0, fats: 13.5 },

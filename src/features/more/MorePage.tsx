@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FocusEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Download, Moon, Pill, Save, Sunrise } from 'lucide-react'
+import { Download, Moon, Pill, Save, Sunrise, Trash2 } from 'lucide-react'
 import { appSettings, db } from '../../data/db'
 import { creatineRepo, dailyTaskRepo, goalRepo, preferencesRepo, profileRepo } from '../../data/repositories'
 import { dateKey, formatTimeAr, goalLabels, normalizeGoal, normalizePreferences, recommendGoal, timeToMinutes } from '../../domain/dailyCoach'
@@ -34,6 +34,8 @@ export default function MorePage() {
   const [creatineEnabled, setCreatineEnabled] = useState(true)
   const [creatineDose, setCreatineDose] = useState('5')
   const [saved, setSaved] = useState(false)
+  const [resetText, setResetText] = useState('')
+  const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
     if (profile) {
@@ -88,6 +90,15 @@ export default function MorePage() {
     const tasks = await dailyTaskRepo.list(userId, today)
     const creatineTask = tasks.find((task) => task.type === 'creatine')
     if (creatineTask?.id) await dailyTaskRepo.setCompleted(creatineTask.id, true)
+  }
+
+
+  async function resetApp() {
+    if (resetText.trim() !== 'delete') return
+    setResetting(true)
+    await db.delete()
+    localStorage.clear()
+    window.location.href = '/onboarding'
   }
 
   async function exportData() {
@@ -182,6 +193,12 @@ export default function MorePage() {
       <Card title="نسخة احتياطية">
         <p className="muted">نزّل بياناتك في ملف JSON للاحتفاظ بها.</p>
         <Button variant="secondary" onClick={exportData}><Download size={18} /> تصدير بياناتي</Button>
+      </Card>
+
+      <Card title="إعادة التطبيق من البداية" className="danger-card">
+        <div className="danger-head"><Trash2 size={28} /><div><h2>حذف كل البيانات والبدء من جديد</h2><p>ده هيمسح الوزن والأكل والخطط والمياه والكرياتين وكل سجلاتك من الجهاز.</p></div></div>
+        <label>للتأكيد اكتب كلمة <strong>delete</strong><input value={resetText} onChange={(event) => setResetText(event.target.value)} placeholder="delete" autoCapitalize="none" autoCorrect="off" /></label>
+        <Button variant="secondary" disabled={resetText.trim() !== 'delete' || resetting} onClick={resetApp}><Trash2 size={18} /> {resetting ? 'جاري الحذف...' : 'امسح كل البيانات وابدأ من الأول'}</Button>
       </Card>
     </Page>
   )

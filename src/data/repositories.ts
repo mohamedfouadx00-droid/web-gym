@@ -103,6 +103,11 @@ export const weightRepo = {
 
 export const dayEventRepo = {
   list: (userId: string, dateKey: string) => db.dayEvents.where('userId').equals(userId).filter((row) => row.dateKey === dateKey).sortBy('createdAt'),
+  listAll: (userId: string) => db.dayEvents.where('userId').equals(userId).sortBy('createdAt'),
+  latestByType: async (userId: string, type: DayEvent['type']) => {
+    const rows = await db.dayEvents.where('userId').equals(userId).filter((row) => row.type === type).sortBy('createdAt')
+    return rows[rows.length - 1]
+  },
   add: (value: DayEvent) => db.dayEvents.add(value),
 }
 

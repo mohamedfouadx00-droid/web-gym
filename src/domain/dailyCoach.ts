@@ -199,7 +199,7 @@ export function buildDailyPlan(params: {
   const tomorrowWake = adjustedTomorrowWake(wake, targetWake)
   const bedtimeClock = (tomorrowWake - Math.round(preferences.desiredSleepHours * 60) + 1440) % 1440
   const bedtime = bedtimeClock <= wake ? bedtimeClock + 1440 : bedtimeClock
-  const gymTime = checkIn.goingGym ? chooseGymTime(wake, preferences.gymPeriod) : undefined
+  const gymTime = checkIn.goingGym ? (checkIn.customGymTime ? timeToMinutes(checkIn.customGymTime) : chooseGymTime(wake, preferences.gymPeriod)) : undefined
   const date = checkIn.dateKey
   const userId = checkIn.userId
 
