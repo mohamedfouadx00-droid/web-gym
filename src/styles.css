@@ -241,3 +241,5 @@ label{display:grid;gap:8px;color:#dce4f0}
 .danger-head svg{color:#ff6b7a;flex:0 0 auto}
 .danger-head h2{margin:0 0 5px}
 .danger-head p{margin:0;color:var(--muted);line-height:1.7}
+
+.sleep-control-card{display:grid!important;gap:14px;border-color:rgba(124,92,255,.35)!important;background:linear-gradient(145deg,rgba(79,70,229,.12),rgba(13,19,34,.96))!important}.sleep-control-card.sleep-active{border-color:rgba(33,212,167,.55)!important;box-shadow:0 0 0 1px rgba(33,212,167,.12) inset}.sleep-control-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.sleep-control-head h2{margin:.3rem 0 .45rem}.sleep-control-head>svg{color:var(--accent);flex:0 0 auto}

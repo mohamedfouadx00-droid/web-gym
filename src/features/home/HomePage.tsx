@@ -87,6 +87,7 @@ export default function HomePage() {
   const available = useLiveQuery(() => availableFoodRepo.list(userId, today), [userId, today]) ?? []
   const creatineLog = useLiveQuery(() => creatineRepo.get(userId, today), [userId, today])
   const events = useLiveQuery(() => dayEventRepo.list(userId, today), [userId, today]) ?? []
+  const allEvents = useLiveQuery(() => dayEventRepo.listAll(userId), [userId]) ?? []
   const review = useLiveQuery(() => dayReviewRepo.get(userId, today), [userId, today])
 
   const [goingGym, setGoingGym] = useState(true)
@@ -97,6 +98,7 @@ export default function HomePage() {
   const [showMissedSleep, setShowMissedSleep] = useState(false)
   const [missedBedtime, setMissedBedtime] = useState('23:30')
   const [sleepSaveMessage, setSleepSaveMessage] = useState('')
+  const [sleepActionMessage, setSleepActionMessage] = useState('')
   const [customGymTime, setCustomGymTimeValue] = useState('18:00')
   const [foodAdherence, setFoodAdherence] = useState(7)
   const [waterAdherence, setWaterAdherence] = useState(7)
@@ -109,6 +111,11 @@ export default function HomePage() {
   const action = useMemo(() => nextAction(tasks), [tasks])
   const gymTask = tasks.find((task) => task.type === 'gym' && !task.completed)
   const lastEvent = events[events.length - 1]
+  const lastSleepEvent = [...allEvents].reverse().find((event) =>
+    event.type === 'sleep_started' || event.type === 'sleep_failed' || event.type === 'woke_now'
+  )
+  const isTryingToSleep = lastSleepEvent?.type === 'sleep_started'
+  const lastSleepFailed = lastSleepEvent?.type === 'sleep_failed'
 
   async function wakeNow() {
     setSaving(true)
@@ -126,6 +133,27 @@ export default function HomePage() {
     } else {
       setSleepSaveMessage('الوقت غير منطقي بالنسبة لوقت الاستيقاظ. اختار وقت نوم أقرب للصحيح.')
     }
+  }
+
+  async function sleepNow() {
+    setSaving(true)
+    await startSleepNow(userId)
+    setSleepActionMessage('تم تسجيل إنك بدأت تحاول تنام الآن. لو النوم مجاش، اضغط «مقدرتش أنام».')
+    setSaving(false)
+  }
+
+  async function couldNotSleep() {
+    setSaving(true)
+    await failedToSleep(userId)
+    setSleepActionMessage('تمام، ما حسبناش إنك نمت. خُد 15–20 دقيقة هدوء وبعدين تقدر تضغط «هحاول أنام تاني».')
+    setSaving(false)
+  }
+
+  async function trySleepAgain() {
+    setSaving(true)
+    await startSleepNow(userId)
+    setSleepActionMessage('بدأنا محاولة نوم جديدة من الوقت الحالي.')
+    setSaving(false)
   }
 
   async function completeTask(task: DailyTask) {
@@ -180,6 +208,48 @@ export default function HomePage() {
         </div>
       )}
 
+      <Card className={`sleep-control-card ${isTryingToSleep ? 'sleep-active' : ''}`}>
+        <div className="sleep-control-head">
+          <div>
+            <span className="eyebrow">النوم</span>
+            <h2>{isTryingToSleep ? 'إنت مسجل إنك بتحاول تنام الآن' : lastSleepFailed ? 'النوم ماجاش آخر مرة' : 'جاهز للنوم؟'}</h2>
+            <p className="muted">
+              {isTryingToSleep
+                ? 'لو نمت، لما تصحى اضغط «أنا صحيت الآن». لو لسه صاحي ومش قادر تنام، اضغط «مقدرتش أنام».'
+                : lastSleepFailed
+                  ? 'لما تبقى جاهز جرّب محاولة جديدة، والوقت الجديد هو اللي هيتحسب.'
+                  : 'اضغط وقت ما تدخل السرير فعلًا، مش قبلها بساعات.'}
+            </p>
+          </div>
+          <Moon size={34} />
+        </div>
+
+        <div className="button-row">
+          {!isTryingToSleep && !lastSleepFailed && (
+            <Button disabled={saving} onClick={sleepNow}><Moon size={18} /> أنا هنام الآن</Button>
+          )}
+          {isTryingToSleep && (
+            <>
+              <Button disabled={saving} onClick={couldNotSleep}><AlarmClock size={18} /> مقدرتش أنام</Button>
+              <Button variant="secondary" disabled={saving} onClick={wakeNow}><Sunrise size={18} /> أنا صحيت الآن</Button>
+            </>
+          )}
+          {lastSleepFailed && (
+            <>
+              <Button disabled={saving} onClick={trySleepAgain}><Moon size={18} /> هحاول أنام تاني</Button>
+              <Button variant="secondary" onClick={() => setShowMissedSleep(true)}><Clock3 size={18} /> سجل وقت نومي يدويًا</Button>
+            </>
+          )}
+          {!isTryingToSleep && !lastSleepFailed && (
+            <Button variant="secondary" onClick={() => setShowMissedSleep(true)}><Clock3 size={18} /> نسيت أسجل نوم امبارح</Button>
+          )}
+        </div>
+      </Card>
+
+      {sleepActionMessage && (
+        <Card className="success-card"><Check size={24} /><div><h2>تحديث النوم</h2><p>{sleepActionMessage}</p></div></Card>
+      )}
+
       {checkIn && (
         <section className="command-center">
           <div className="command-center-head">
@@ -192,9 +262,7 @@ export default function HomePage() {
             <button onClick={async () => returnedFromGym(userId)}><Check /><strong>رجعت من الجيم</strong><span>مياه + أكل + كرياتين</span></button>
             <button onClick={async () => rescueMessyDay(userId)}><AlarmClock /><strong>يومي اتلخبط</strong><span>أنقذ باقي اليوم</span></button>
             <button onClick={async () => setOutsideHome(userId)}><House /><strong>أنا بره البيت</strong><span>اختيار عملي من المتاح</span></button>
-            <button onClick={async () => startSleepNow(userId)}><Moon /><strong>أنا هنام الآن</strong><span>سجّل بداية النوم</span></button>
             <button onClick={() => setShowMissedSleep(true)}><Clock3 /><strong>نسيت أسجل نوم امبارح</strong><span>أدخل وقت النوم يدويًا</span></button>
-            <button onClick={async () => failedToSleep(userId)}><AlarmClock /><strong>مقدرتش أنام</strong><span>عدّل محاولة النوم من غير ضغط</span></button>
             <button onClick={() => setShowReview(true)}><Check /><strong>هخلص يومي</strong><span>تقييم سريع في 10 ثوانٍ</span></button>
           </div>
           {showWhy && <div className="why-box"><strong>{action?.title ?? 'لا توجد خطوة معلقة'}</strong><p>{actionExplanation(action)}</p></div>}

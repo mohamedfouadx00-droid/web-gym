@@ -84,8 +84,19 @@ export async function startDayNow(userId: string, goingGym = true) {
   const day = dateKey()
   const now = new Date()
   const wakeTime = minutesToTimeInput(now.getHours() * 60 + now.getMinutes())
-  const lastSleep = await dayEventRepo.latestByType(userId, 'sleep_started')
-  const sleepHours = lastSleep ? hoursBetween(lastSleep.createdAt, now) : undefined
+
+  const [lastSleep, lastFailedSleep, lastWake] = await Promise.all([
+    dayEventRepo.latestByType(userId, 'sleep_started'),
+    dayEventRepo.latestByType(userId, 'sleep_failed'),
+    dayEventRepo.latestByType(userId, 'woke_now'),
+  ])
+
+  const sleepStartedAt = lastSleep ? new Date(lastSleep.createdAt).getTime() : 0
+  const failedAt = lastFailedSleep ? new Date(lastFailedSleep.createdAt).getTime() : 0
+  const wokeAt = lastWake ? new Date(lastWake.createdAt).getTime() : 0
+  const hasActiveSleepAttempt = Boolean(lastSleep && sleepStartedAt > failedAt && sleepStartedAt > wokeAt)
+  const sleepHours = hasActiveSleepAttempt && lastSleep ? hoursBetween(lastSleep.createdAt, now) : undefined
+
   await checkInRepo.save({ userId, dateKey: day, wakeTime, sleepHours, goingGym })
   await addEvent(userId, 'woke_now', sleepHours ? `نوم تقريبي ${sleepHours} ساعة` : undefined)
   return regenerateDailyPlan(userId, day)
