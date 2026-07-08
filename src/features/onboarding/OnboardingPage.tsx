@@ -1,164 +1,145 @@
-import { useState } from 'react'
+import { useMemo, useState, type FocusEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { appSettings, db } from '../../data/db'
 import { goalRepo, preferencesRepo, profileRepo } from '../../data/repositories'
-import type { ActivityLevel, ExperienceLevel, GoalType, UserPreferences } from '../../domain/models'
+import { recommendGoal } from '../../domain/dailyCoach'
+import type { ActivityLevel, GymPeriod, TrainingExperience, UserProfile, WeightTrend } from '../../domain/models'
 import { Button, Card } from '../../components/UI'
 
-const goalLabels: Record<GoalType, string> = {
-  muscle: 'بناء العضلات',
-  fat_loss: 'خسارة الدهون',
-  recomp: 'إعادة تكوين الجسم',
-  strength: 'زيادة القوة',
-  fitness: 'تحسين اللياقة',
-  maintain: 'الحفاظ على الوزن',
-}
-const days = ['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة']
-const healthOptions = [
-  'ألم في الصدر مع المجهود',
-  'دوخة شديدة أو إغماء',
-  'ألم شديد أو إصابة بالمفاصل',
-  'مشكلة قلبية مشخصة',
-]
+const selectAll = (event: FocusEvent<HTMLInputElement>) => event.currentTarget.select()
 
 export default function OnboardingPage() {
-  const nav = useNavigate()
+  const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
-  const [birthYear, setBirthYear] = useState(2000)
-  const [height, setHeight] = useState(175)
-  const [weight, setWeight] = useState(75)
-  const [experience, setExperience] = useState<ExperienceLevel>('beginner')
+  const [birthYear, setBirthYear] = useState('2000')
+  const [height, setHeight] = useState('175')
+  const [weight, setWeight] = useState('75')
+  const [waist, setWaist] = useState('')
   const [activity, setActivity] = useState<ActivityLevel>('moderate')
-  const [goal, setGoal] = useState<GoalType>('muscle')
-  const [workoutDays, setWorkoutDays] = useState<string[]>(['السبت', 'الاثنين', 'الأربعاء'])
-  const [equipment, setEquipment] = useState<string[]>(['أجهزة', 'دمبل', 'كابل'])
-  const [place, setPlace] = useState<UserPreferences['trainingPlace']>('gym')
-  const [duration, setDuration] = useState(60)
-  const [time, setTime] = useState('18:00')
-  const [budget, setBudget] = useState<UserPreferences['budgetLevel']>('medium')
-  const [cookingTime, setCookingTime] = useState(30)
-  const [healthFlags, setHealthFlags] = useState<string[]>([])
+  const [trainingExperience, setTrainingExperience] = useState<TrainingExperience>('new')
+  const [weightTrend, setWeightTrend] = useState<WeightTrend>('stable')
+  const [targetWakeTime, setTargetWakeTime] = useState('08:00')
+  const [sleepHours, setSleepHours] = useState('8')
+  const [gymPeriod, setGymPeriod] = useState<GymPeriod>('auto')
+  const [creatineEnabled, setCreatineEnabled] = useState(true)
+  const [creatineDose, setCreatineDose] = useState('5')
 
-  const toggle = (value: string, list: string[], setter: (value: string[]) => void) =>
-    setter(list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
+  const profileDraft = useMemo<UserProfile>(() => ({
+    userId: 'preview',
+    name: name.trim(),
+    birthYear: Number(birthYear) || 2000,
+    heightCm: Number(height) || 175,
+    currentWeightKg: Number(weight) || 75,
+    waistCm: Number(waist) || undefined,
+    activityLevel: activity,
+    trainingExperience,
+    weightTrend,
+  }), [name, birthYear, height, weight, waist, activity, trainingExperience, weightTrend])
+
+  const recommendation = useMemo(() => recommendGoal(profileDraft), [profileDraft])
 
   async function finish() {
     const userId = crypto.randomUUID()
+    const finalProfile: UserProfile = { ...profileDraft, userId }
+    const finalRecommendation = recommendGoal(finalProfile)
     await db.users.add({ id: userId, createdAt: new Date().toISOString() })
-    await profileRepo.save({
-      userId,
-      name: name.trim(),
-      birthYear,
-      heightCm: height,
-      currentWeightKg: weight,
-      experience,
-      activityLevel: activity,
-      healthFlags,
-    })
-    await goalRepo.save({ userId, primary: goal, pace: 'moderate', priority: 1, targetWeightKg: weight })
+    await profileRepo.save(finalProfile)
+    await goalRepo.save({ userId, primary: finalRecommendation.goal, targetWeightKg: Number(weight) })
     await preferencesRepo.save({
       userId,
-      workoutDays,
-      restDays: days.filter((day) => !workoutDays.includes(day)),
-      equipment,
-      trainingPlace: place,
-      workoutDurationMin: duration,
-      preferredWorkoutTime: time,
-      supplementsEnabled: [],
-      foodPreferences: [],
-      dislikedFoods: [],
-      cookingTimeMin: cookingTime,
-      budgetLevel: budget,
+      targetWakeTime,
+      desiredSleepHours: Number(sleepHours),
+      gymPeriod,
+      creatineEnabled,
+      creatineDoseG: Number(creatineDose),
     })
     appSettings.activeUserId = userId
     appSettings.onboardingCompleted = true
-    nav('/', { replace: true })
+    navigate('/', { replace: true })
   }
 
   return (
     <div className="onboarding">
       <div className="onboarding-panel">
         <div className="logo-mark">G</div>
-        <div className="step-dots">{[0, 1, 2, 3, 4].map((item) => <span key={item} className={item <= step ? 'active' : ''} />)}</div>
+        <div className="step-dots">{[0, 1, 2, 3].map((index) => <span key={index} className={index <= step ? 'active' : ''} />)}</div>
 
         {step === 0 && (
-          <>
-            <span className="eyebrow">مش هتدخل الجيم لوحدك</span>
-            <h1>أنا اللي هقولك تعمل إيه النهارده</h1>
-            <p>هنبدأ من الصفر: تمرينك، ترتيب التمارين، اختيار الوزن، الراحة، وأكلك. أنت تسجّل اللي حصل وأنا أقرر الخطوة التالية.</p>
-            <div className="coach-preview">
-              <div><strong>1</strong><span>أفهم جسمك وهدفك</span></div>
-              <div><strong>2</strong><span>أجهز خطة اليوم</span></div>
-              <div><strong>3</strong><span>أضبط الوزن بعد كل مجموعة</span></div>
-            </div>
-            <Button onClick={() => setStep(1)}>ابدأ توجيهي خطوة بخطوة</Button>
-          </>
+          <div className="welcome-block">
+            <span className="eyebrow">مساعد يومك</span>
+            <h1>إنت تقول صحيت إمتى وإيه الأكل المتاح، وهو يرتّب لك باقي اليوم.</h1>
+            <p>مياه، أكل، ميعاد الجيم، الكرياتين، وميعاد النوم — وكمان يختار لك الهدف الأنسب بدل ما تحتار بين تضخيم أو تنشيف.</p>
+            <Button onClick={() => setStep(1)}>ابدأ الإعداد</Button>
+          </div>
         )}
 
         {step === 1 && (
-          <Card title="أعرفك الأول">
+          <Card title="خلّيني أفهم جسمك الأول">
             <label>اسمك<input value={name} onChange={(event) => setName(event.target.value)} placeholder="اكتب اسمك" /></label>
             <div className="form-grid">
-              <label>سنة الميلاد<input type="number" onFocus={(event) => event.currentTarget.select()} value={birthYear} onChange={(event) => setBirthYear(Number(event.target.value))} /></label>
-              <label>الطول (سم)<input type="number" onFocus={(event) => event.currentTarget.select()} value={height} onChange={(event) => setHeight(Number(event.target.value))} /></label>
-              <label>الوزن الحالي (كجم)<input type="number" onFocus={(event) => event.currentTarget.select()} value={weight} onChange={(event) => setWeight(Number(event.target.value))} /></label>
+              <label>سنة الميلاد<input inputMode="numeric" value={birthYear} onFocus={selectAll} onChange={(event) => setBirthYear(event.target.value.replace(/\D/g, '').slice(0, 4))} /></label>
+              <label>الطول (سم)<input inputMode="numeric" value={height} onFocus={selectAll} onChange={(event) => setHeight(event.target.value.replace(/\D/g, '').slice(0, 3))} /></label>
+              <label>الوزن الحالي (كجم)<input inputMode="decimal" value={weight} onFocus={selectAll} onChange={(event) => setWeight(event.target.value.replace(/[^0-9.]/g, '').slice(0, 5))} /></label>
+              <label>محيط الخصر (سم) — اختياري<input inputMode="decimal" value={waist} onFocus={selectAll} onChange={(event) => setWaist(event.target.value.replace(/[^0-9.]/g, '').slice(0, 5))} placeholder="اتركه فارغًا لو مش عارفه" /><small className="field-hint">الموقع هيختار هدفًا مبدئيًا من طولك ووزنك وسنك ونشاطك وخبرتك. تقدر تضيف الخصر لاحقًا لتحسين الدقة.</small></label>
             </div>
-            <h3>خبرتك في الجيم</h3>
-            <div className="option-grid three">
-              <button className={`choice ${experience === 'beginner' ? 'selected' : ''}`} onClick={() => setExperience('beginner')}>جديد تمامًا</button>
-              <button className={`choice ${experience === 'intermediate' ? 'selected' : ''}`} onClick={() => setExperience('intermediate')}>عندي خبرة بسيطة</button>
-              <button className={`choice ${experience === 'advanced' ? 'selected' : ''}`} onClick={() => setExperience('advanced')}>متقدم</button>
-            </div>
-            <h3>نشاطك خارج الجيم</h3>
-            <div className="option-grid three">
-              <button className={`choice ${activity === 'low' ? 'selected' : ''}`} onClick={() => setActivity('low')}>قليل الحركة</button>
-              <button className={`choice ${activity === 'moderate' ? 'selected' : ''}`} onClick={() => setActivity('moderate')}>متوسط</button>
-              <button className={`choice ${activity === 'high' ? 'selected' : ''}`} onClick={() => setActivity('high')}>نشط</button>
-            </div>
-            <Button disabled={!name.trim()} onClick={() => setStep(2)}>التالي</Button>
+            <label>نشاطك خارج الجيم
+              <select value={activity} onChange={(event) => setActivity(event.target.value as ActivityLevel)}>
+                <option value="low">قليل — أغلب اليوم قاعد</option>
+                <option value="moderate">متوسط — حركة يومية عادية</option>
+                <option value="high">عالي — شغل أو حركة كثيرة</option>
+              </select>
+            </label>
+            <label>خبرتك في الجيم
+              <select value={trainingExperience} onChange={(event) => setTrainingExperience(event.target.value as TrainingExperience)}>
+                <option value="new">جديد — لسه بادئ أو أقل من 6 شهور</option>
+                <option value="some">عندي خبرة بسيطة</option>
+                <option value="experienced">منتظم من فترة طويلة</option>
+              </select>
+            </label>
+            <label>وزنك في آخر شهرين غالبًا
+              <select value={weightTrend} onChange={(event) => setWeightTrend(event.target.value as WeightTrend)}>
+                <option value="losing">بينزل</option>
+                <option value="stable">ثابت تقريبًا</option>
+                <option value="gaining">بيزيد</option>
+              </select>
+            </label>
+            <Button disabled={!name.trim() || !weight || !height || !birthYear} onClick={() => setStep(2)}>حلل بياناتي</Button>
           </Card>
         )}
 
         {step === 2 && (
-          <Card title="أنا هبني الخطة على هدفك">
-            <div className="option-grid">{Object.entries(goalLabels).map(([key, label]) => <button key={key} className={`choice ${goal === key ? 'selected' : ''}`} onClick={() => setGoal(key as GoalType)}>{label}</button>)}</div>
-            <Button onClick={() => setStep(3)}>التالي</Button>
+          <Card title="الهدف الأنسب لك مبدئيًا">
+            <div className="recommendation-card">
+              <span className="eyebrow">اختيار التطبيق</span>
+              <h2>{recommendation.title}</h2>
+              <p>{recommendation.summary}</p>
+              <div className="recommendation-metrics">
+                <span>مؤشر الوزن بالنسبة للطول: {recommendation.bmi}</span>
+                {recommendation.waistToHeight !== undefined && <span>نسبة الخصر للطول: {recommendation.waistToHeight}</span>}
+              </div>
+              <ul className="reason-list">{recommendation.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+            </div>
+            <p className="safety-note">دي توصية تنظيمية مبدئية وليست تشخيصًا طبيًا. لو عندك مرض مزمن أو تعليمات علاجية خاصة، اتبع طبيبك.</p>
+            <Button onClick={() => setStep(3)}>تمام، رتّب يومي على الهدف ده</Button>
           </Card>
         )}
 
         {step === 3 && (
-          <Card title="إمتى وفين هتتمرن؟">
-            <h3>الأيام المتاحة فعلًا</h3>
-            <div className="chips">{days.map((day) => <button key={day} className={workoutDays.includes(day) ? 'chip active' : 'chip'} onClick={() => toggle(day, workoutDays, setWorkoutDays)}>{day}</button>)}</div>
-            <h3>مكان التدريب</h3>
+          <Card title="خلّي التطبيق يرتّب يومك">
+            <div className="form-grid">
+              <label>الوقت اللي تحب تثبت عليه الاستيقاظ<input type="time" value={targetWakeTime} onChange={(event) => setTargetWakeTime(event.target.value)} /></label>
+              <label>عدد ساعات النوم المستهدفة<input inputMode="decimal" value={sleepHours} onFocus={selectAll} onChange={(event) => setSleepHours(event.target.value.replace(/[^0-9.]/g, '').slice(0, 3))} /></label>
+            </div>
+            <h3>التطبيق يفضّل يحدد الجيم إمتى؟</h3>
             <div className="chips">
-              <button className={place === 'gym' ? 'chip active' : 'chip'} onClick={() => setPlace('gym')}>الجيم</button>
-              <button className={place === 'home' ? 'chip active' : 'chip'} onClick={() => setPlace('home')}>البيت</button>
-              <button className={place === 'both' ? 'chip active' : 'chip'} onClick={() => setPlace('both')}>الاثنان</button>
+              <button className={gymPeriod === 'auto' ? 'chip active' : 'chip'} onClick={() => setGymPeriod('auto')}>هو يختار</button>
+              <button className={gymPeriod === 'afternoon' ? 'chip active' : 'chip'} onClick={() => setGymPeriod('afternoon')}>العصر</button>
+              <button className={gymPeriod === 'evening' ? 'chip active' : 'chip'} onClick={() => setGymPeriod('evening')}>المساء</button>
             </div>
-            <h3>المعدات المتاحة</h3>
-            <div className="chips">{['أجهزة', 'دمبل', 'بار', 'كابل', 'وزن الجسم'].map((item) => <button key={item} className={equipment.includes(item) ? 'chip active' : 'chip'} onClick={() => toggle(item, equipment, setEquipment)}>{item}</button>)}</div>
-            <div className="form-grid">
-              <label>مدة التمرين<input type="number" onFocus={(event) => event.currentTarget.select()} min="30" max="120" step="10" value={duration} onChange={(event) => setDuration(Number(event.target.value))} /></label>
-              <label>وقت التمرين المفضل<input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></label>
-            </div>
-            <Button disabled={!workoutDays.length} onClick={() => setStep(4)}>التالي</Button>
-          </Card>
-        )}
-
-        {step === 4 && (
-          <Card title="آخر حاجتين عشان أوجهك صح">
-            <h3>الأكل والوقت</h3>
-            <div className="form-grid">
-              <label>وقت الطبخ المتاح بالدقائق<input type="number" onFocus={(event) => event.currentTarget.select()} min="0" max="120" value={cookingTime} onChange={(event) => setCookingTime(Number(event.target.value))} /></label>
-              <label>ميزانية الأكل<select value={budget} onChange={(event) => setBudget(event.target.value as UserPreferences['budgetLevel'])}><option value="low">اقتصادية</option><option value="medium">متوسطة</option><option value="high">مرنة</option></select></label>
-            </div>
-            <h3>هل عندك أي من التالي؟</h3>
-            <p className="muted">الإجابة هنا للسلامة فقط، مش للتشخيص.</p>
-            <div className="health-list">{healthOptions.map((item) => <label className="health-option" key={item}><input type="checkbox" checked={healthFlags.includes(item)} onChange={() => toggle(item, healthFlags, setHealthFlags)} /><span>{item}</span></label>)}</div>
-            {healthFlags.length > 0 && <div className="safety-note">بما إنك اخترت عرضًا صحيًا مهمًا، التطبيق هيفضل محافظ في التوجيه. قبل برنامج جديد أو مجهود قوي، الأفضل مراجعة طبيب أو متخصص مؤهل.</div>}
-            <Button onClick={finish}>جهّز أول يوم لي</Button>
+            <label className="toggle-row"><input type="checkbox" checked={creatineEnabled} onChange={(event) => setCreatineEnabled(event.target.checked)} /><span>أنا باخد كرياتين</span></label>
+            {creatineEnabled && <label>الجرعة اليومية المسجلة عندك (جم)<input inputMode="decimal" value={creatineDose} onFocus={selectAll} onChange={(event) => setCreatineDose(event.target.value.replace(/[^0-9.]/g, '').slice(0, 4))} /></label>}
+            <Button onClick={finish}>ابدأ تنظيم يومي</Button>
           </Card>
         )}
       </div>

@@ -1,8 +1,12 @@
-export type GoalType = 'muscle' | 'fat_loss' | 'recomp' | 'strength' | 'fitness' | 'maintain'
-export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced'
+export type GoalType = 'fat_loss' | 'lean_gain' | 'recomp' | 'maintain'
 export type ActivityLevel = 'low' | 'moderate' | 'high'
-export type TrainingPlace = 'gym' | 'home' | 'both'
-export type FormQuality = 'good' | 'uncertain' | 'poor'
+export type TrainingExperience = 'new' | 'some' | 'experienced'
+export type WeightTrend = 'losing' | 'stable' | 'gaining'
+export type GymPeriod = 'auto' | 'afternoon' | 'evening'
+export type DailyTaskType = 'water' | 'meal' | 'gym' | 'creatine' | 'sleep' | 'checkin'
+export type FoodCategory = 'protein' | 'carb' | 'dairy' | 'fruit' | 'fat' | 'vegetable'
+export type DayEventType = 'woke_now' | 'gym_now' | 'returned_gym' | 'day_messy' | 'outside_home'
+export type TaskResponse = 'done' | 'snoozed' | 'unavailable'
 
 export interface User {
   id: string
@@ -16,10 +20,10 @@ export interface UserProfile {
   birthYear: number
   heightCm: number
   currentWeightKg: number
-  bodyFatPercent?: number
-  experience: ExperienceLevel
+  waistCm?: number
   activityLevel: ActivityLevel
-  healthFlags?: string[]
+  trainingExperience?: TrainingExperience
+  weightTrend?: WeightTrend
 }
 
 export interface Goal {
@@ -27,96 +31,68 @@ export interface Goal {
   userId: string
   primary: GoalType
   targetWeightKg?: number
-  pace: 'slow' | 'moderate' | 'fast'
-  priority: number
 }
 
 export interface UserPreferences {
   id?: number
   userId: string
-  workoutDays: string[]
-  restDays: string[]
-  equipment: string[]
-  trainingPlace: TrainingPlace
-  workoutDurationMin: number
-  preferredWorkoutTime: string
-  supplementsEnabled: string[]
-  foodPreferences: string[]
-  dislikedFoods: string[]
-  cookingTimeMin: number
-  budgetLevel: 'low' | 'medium' | 'high'
+  targetWakeTime: string
+  desiredSleepHours: number
+  gymPeriod: GymPeriod
+  creatineEnabled: boolean
+  creatineDoseG: number
 }
 
-export interface WeightLog {
-  id?: number
-  userId: string
-  valueKg: number
-  date: string
-}
-
-export interface RecoveryLog {
-  id?: number
-  userId: string
-  date: string
-  sleepHours: number
-  sleepQuality: number
-  fatigue: number
-  soreness: number
-  pain: number
-  notes?: string
-}
-
-export interface Exercise {
+export interface FoodCatalogItem {
   id: string
   nameAr: string
-  muscle: string
-  secondaryMuscles: string[]
-  equipment: string
-  difficulty: 'مبتدئ' | 'متوسط' | 'متقدم'
-  movement: 'squat' | 'hinge' | 'push' | 'pull' | 'carry' | 'core' | 'isolation' | 'cardio'
-  places: Array<'gym' | 'home'>
-  recognitionTips?: string[]
-  instructions: string[]
-  formCues: string[]
-  mistakes: string[]
-  stopSignals: string[]
-  alternatives: string[]
-  startingWeightGuide: string
-  incrementKg?: number
+  category: FoodCategory
+  servingLabel: string
+  calories: number
+  protein: number
+  carbs: number
+  fats: number
 }
 
-export interface FavoriteExercise {
+export interface AvailableFood {
   id?: number
   userId: string
-  exerciseId: string
+  dateKey: string
+  foodId: string
+  quantity: number
+  unit: string
 }
 
-export interface WorkoutSet {
-  id: string
-  reps: number
-  weightKg: number
-  rpe: number
-  formQuality?: FormQuality
-  coachFeedback?: string
-  notes?: string
-}
-
-export interface WorkoutExerciseEntry {
-  exerciseId: string
-  sets: WorkoutSet[]
-}
-
-export interface WorkoutSession {
-  id: string
+export interface DailyCheckIn {
+  id?: number
   userId: string
-  startedAt: string
-  endedAt?: string
+  dateKey: string
+  wakeTime: string
+  sleepHours?: number
+  goingGym: boolean
+}
+
+export interface DailyTask {
+  id?: number
+  userId: string
+  dateKey: string
+  timeMinutes: number
+  type: DailyTaskType
   title: string
-  planId?: string
-  readinessScore?: number
-  exercises: WorkoutExerciseEntry[]
-  notes?: string
-  painNotes?: string
+  details: string
+  completed: boolean
+  response?: TaskResponse
+}
+
+export interface MealPlanItem {
+  id?: number
+  userId: string
+  dateKey: string
+  timeMinutes: number
+  title: string
+  ingredients: string[]
+  calories: number
+  protein: number
 }
 
 export interface WaterLog {
@@ -126,74 +102,39 @@ export interface WaterLog {
   date: string
 }
 
-export interface FoodItem {
-  id: string
-  nameAr: string
-  serving: string
-  calories: number
-  protein: number
-  carbs: number
-  fats: number
-  category: 'protein' | 'carb' | 'fat' | 'fruit' | 'dairy' | 'meal'
-}
-
-export interface MealLog {
+export interface CreatineLog {
   id?: number
   userId: string
+  dateKey: string
+  doseG: number
+  takenAt: string
+}
+
+export interface WeightLog {
+  id?: number
+  userId: string
+  valueKg: number
   date: string
-  foodId: string
-  servings: number
 }
 
-export interface InventoryItem {
+export interface DayEvent {
   id?: number
   userId: string
-  name: string
-  quantity: number
-  unit: string
-  expiresAt?: string
+  dateKey: string
+  type: DayEventType
+  createdAt: string
+  note?: string
 }
 
-export interface SupplementLog {
+export interface DayReview {
   id?: number
   userId: string
-  name: string
-  dose: string
-  date: string
-  taken: boolean
-}
-
-export interface MeasurementLog {
-  id?: number
-  userId: string
-  date: string
-  waist?: number
-  chest?: number
-  arms?: number
-  thighs?: number
-  shoulders?: number
-}
-
-export interface ScheduleEvent {
-  id?: number
-  userId: string
-  title: string
-  type: 'workout' | 'meal' | 'water' | 'sleep' | 'supplement' | 'custom'
-  dateTime: string
-}
-
-export interface PrescribedExercise {
-  exerciseId: string
-  sets: number
-  minReps: number
-  maxReps: number
-  restSeconds: number
-  reason: string
-}
-
-export interface DailyWorkoutPlan {
-  id: string
-  title: string
-  estimatedMinutes: number
-  exercises: PrescribedExercise[]
+  dateKey: string
+  foodAdherence: number
+  waterAdherence: number
+  energy: number
+  wentGym: boolean
+  creatineTaken: boolean
+  note?: string
+  createdAt: string
 }
