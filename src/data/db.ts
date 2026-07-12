@@ -14,6 +14,7 @@ import type {
   UserProfile,
   WaterLog,
   WeightLog,
+  WaistLog,
   CoachMessage,
 } from '../domain/models'
 
@@ -23,6 +24,7 @@ class GymDatabase extends Dexie {
   goals!: Table<Goal, number>
   preferences!: Table<UserPreferences, number>
   weightLogs!: Table<WeightLog, number>
+  waistLogs!: Table<WaistLog, number>
   waterLogs!: Table<WaterLog, number>
   availableFoods!: Table<AvailableFood, number>
   dailyCheckIns!: Table<DailyCheckIn, number>
@@ -37,12 +39,13 @@ class GymDatabase extends Dexie {
   constructor() {
     super('gym-arabic-men')
 
-    this.version(13).stores({
+    this.version(14).stores({
       users: 'id,createdAt',
       profiles: '++id,&userId',
       goals: '++id,&userId',
       preferences: '++id,&userId',
       weightLogs: '++id,userId,date',
+      waistLogs: '++id,userId,date',
       waterLogs: '++id,userId,date,sourceTaskId',
       availableFoods: '++id,[userId+dateKey+foodId],userId,dateKey,foodId',
       dailyCheckIns: '++id,[userId+dateKey],userId,dateKey',

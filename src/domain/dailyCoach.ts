@@ -490,5 +490,12 @@ export function normalizePreferences(raw: UserPreferences | undefined, userId: s
     ramadanMode: source?.ramadanMode ?? false,
     proactiveCoachEnabled: source?.proactiveCoachEnabled ?? true,
     browserNotificationsEnabled: source?.browserNotificationsEnabled ?? false,
+    notificationStartHour: Math.min(23, Math.max(0, Number(source?.notificationStartHour) || 8)),
+    notificationEndHour: Math.min(23, Math.max(0, Number(source?.notificationEndHour) || 23)),
+    maxNotificationsPerDay: Math.min(12, Math.max(1, Number(source?.maxNotificationsPerDay) || 5)),
+    mealNotificationsEnabled: source?.mealNotificationsEnabled ?? true,
+    waterNotificationsEnabled: source?.waterNotificationsEnabled ?? true,
+    creatineNotificationsEnabled: source?.creatineNotificationsEnabled ?? true,
+    prayerNotificationsEnabled: source?.prayerNotificationsEnabled ?? true,
   }
 }

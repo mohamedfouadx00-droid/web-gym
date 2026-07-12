@@ -7,7 +7,6 @@ export interface CoachAiConfig {
   enabled: boolean
   endpoint: string
   model: string
-  apiKey: string
 }
 
 export interface CoachQuestionContext {
@@ -26,9 +25,8 @@ export interface CoachReply {
 
 const defaultConfig: CoachAiConfig = {
   enabled: false,
-  endpoint: '',
+  endpoint: '/api/coach',
   model: '',
-  apiKey: '',
 }
 
 export function getCoachAiConfig(): CoachAiConfig {
@@ -108,6 +106,10 @@ export function answerCoachLocally(question: string, context: CoachQuestionConte
     return 'الأعراض دي محتاجة تصرف طبي سريع، مش نصيحة تدريب أو أكل داخل التطبيق. اطلب مساعدة طبية عاجلة أو تواصل مع الطوارئ في بلدك.'
   }
 
+  if (containsAny(text, ['جدول تمارين', 'تمارين ايه', 'العب ايه', 'مجموعات', 'تكرارات', 'حركات'])) {
+    return 'التطبيق لا يقدّم تمارين أو حركات أو جداول أو مجموعات وتكرارات. أقدر أنظم لك ميعاد الجيم، قرار الذهاب، الشدة العامة، الأكل قبل وبعد الجيم، المياه والكرياتين.'
+  }
+
   if (containsAny(text, ['اتمرن', 'الجيم', 'اريح', 'تمرين'])) {
     return localGymAnswer(context)
   }
@@ -160,8 +162,9 @@ export function answerCoachLocally(question: string, context: CoachQuestionConte
 function buildSystemPrompt(context: CoachQuestionContext) {
   const snapshot = context.snapshot
   return [
-    'أنت مدرب يومي داخل تطبيق صحة ولياقة عربي مصري.',
+    'أنت مدرب يومي داخل تطبيق صحة ولياقة وتغذية عربي مصري.',
     'اكتب ردًا قصيرًا وعمليًا وبلا جلد ذات. لا تشخّص أمراضًا ولا تستبدل الطبيب.',
+    'ممنوع تقديم أسماء تمارين أو جداول تمارين أو حركات أو مجموعات أو تكرارات. يمكنك فقط تنظيم توقيت الجيم، قرار الذهاب، الشدة العامة، الراحة، الأكل، المياه والكرياتين.',
     `الوقت الحالي: ${snapshot.now.toISOString()}.`,
     `المكان: ${locationLabel(snapshot.location)}. الموسم: ${seasonLabel(snapshot.season)}. الجمعة: ${snapshot.isFriday ? 'نعم' : 'لا'}.`,
     `النوم: ${snapshot.sleepHours ?? 'غير مسجل'} ساعة. الطاقة: ${snapshot.energy}. تعب/إصابة: ${snapshot.illness ?? 'لا'}.`,
@@ -178,7 +181,6 @@ async function askRemoteAi(question: string, context: CoachQuestionContext, conf
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
     },
     body: JSON.stringify({
       model: config.model,

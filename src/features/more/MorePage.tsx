@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FocusEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Bell, Bot, Download, Moon, Pill, Save, Trash2, Wifi, WifiOff } from 'lucide-react'
+import { Bell, Bot, Clock3, Download, MapPin, Moon, Pill, RotateCcw, Save, Trash2, Upload, Wifi, WifiOff } from 'lucide-react'
 import { appSettings, db } from '../../data/db'
 import {
   creatineRepo,
@@ -27,6 +27,9 @@ import type {
 import { logMasturbation } from '../../services/dayManagerService'
 import { regenerateDailyPlan } from '../../services/planService'
 import { getCoachAiConfig, saveCoachAiConfig } from '../../services/smartCoachService'
+import { captureDayUndoSnapshot, restoreDayUndoSnapshot, type DayUndoSnapshot } from '../../services/dayUndoService'
+import { createBackup, importBackup, parseBackup, type AppBackup, type BackupSummary } from '../../services/backupService'
+import { getPrayerSettings, PRAYER_CITY_PRESETS, savePrayerSettings, type PrayerSettings } from '../../services/prayerTimesService'
 import { Button, Card, Page, Stat } from '../../components/UI'
 
 const selectAll = (event: FocusEvent<HTMLInputElement>) => event.currentTarget.select()
@@ -59,11 +62,18 @@ export default function MorePage() {
   const [ramadanMode, setRamadanMode] = useState(false)
   const [proactiveCoachEnabled, setProactiveCoachEnabled] = useState(true)
   const [browserNotificationsEnabled, setBrowserNotificationsEnabled] = useState(false)
+  const [notificationStartHour, setNotificationStartHour] = useState(8)
+  const [notificationEndHour, setNotificationEndHour] = useState(23)
+  const [maxNotificationsPerDay, setMaxNotificationsPerDay] = useState(5)
+  const [mealNotificationsEnabled, setMealNotificationsEnabled] = useState(true)
+  const [waterNotificationsEnabled, setWaterNotificationsEnabled] = useState(true)
+  const [creatineNotificationsEnabled, setCreatineNotificationsEnabled] = useState(true)
+  const [prayerNotificationsEnabled, setPrayerNotificationsEnabled] = useState(true)
+  const [prayerSettings, setPrayerSettings] = useState<PrayerSettings>(() => getPrayerSettings())
   const initialAiConfig = useMemo(() => getCoachAiConfig(), [])
   const [aiEnabled, setAiEnabled] = useState(initialAiConfig.enabled)
   const [aiEndpoint, setAiEndpoint] = useState(initialAiConfig.endpoint)
   const [aiModel, setAiModel] = useState(initialAiConfig.model)
-  const [aiApiKey, setAiApiKey] = useState(initialAiConfig.apiKey)
   const [notificationMessage, setNotificationMessage] = useState('')
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -71,6 +81,12 @@ export default function MorePage() {
   const [habitSaved, setHabitSaved] = useState(false)
   const [resetText, setResetText] = useState('')
   const [resetting, setResetting] = useState(false)
+  const [backupFile, setBackupFile] = useState<AppBackup | null>(null)
+  const [backupSummary, setBackupSummary] = useState<BackupSummary | null>(null)
+  const [backupMessage, setBackupMessage] = useState('')
+  const [importingBackup, setImportingBackup] = useState(false)
+  const [creatineUndo, setCreatineUndo] = useState<DayUndoSnapshot | null>(null)
+  const [creatineUndoTimer, setCreatineUndoTimer] = useState<number | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -92,7 +108,14 @@ export default function MorePage() {
     setRamadanMode(Boolean(preferences.ramadanMode))
     setProactiveCoachEnabled(preferences.proactiveCoachEnabled !== false)
     setBrowserNotificationsEnabled(Boolean(preferences.browserNotificationsEnabled))
-  }, [preferences.gymPeriod, preferences.creatineEnabled, preferences.creatineDoseG, preferences.ramadanMode, preferences.proactiveCoachEnabled, preferences.browserNotificationsEnabled])
+    setNotificationStartHour(preferences.notificationStartHour ?? 8)
+    setNotificationEndHour(preferences.notificationEndHour ?? 23)
+    setMaxNotificationsPerDay(preferences.maxNotificationsPerDay ?? 5)
+    setMealNotificationsEnabled(preferences.mealNotificationsEnabled !== false)
+    setWaterNotificationsEnabled(preferences.waterNotificationsEnabled !== false)
+    setCreatineNotificationsEnabled(preferences.creatineNotificationsEnabled !== false)
+    setPrayerNotificationsEnabled(preferences.prayerNotificationsEnabled !== false)
+  }, [preferences.gymPeriod, preferences.creatineEnabled, preferences.creatineDoseG, preferences.ramadanMode, preferences.proactiveCoachEnabled, preferences.browserNotificationsEnabled, preferences.notificationStartHour, preferences.notificationEndHour, preferences.maxNotificationsPerDay, preferences.mealNotificationsEnabled, preferences.waterNotificationsEnabled, preferences.creatineNotificationsEnabled, preferences.prayerNotificationsEnabled])
 
   const profileDraft = useMemo<UserProfile>(() => ({
     id: profile?.id,
@@ -134,7 +157,7 @@ export default function MorePage() {
     && (!waist || (Number(waist) >= 40 && Number(waist) <= 220))
   )
   const creatineDoseValid = !creatineEnabled || (Number(creatineDose) >= 1 && Number(creatineDose) <= 10)
-  const aiConfigValid = !aiEnabled || (aiEndpoint.trim().startsWith('https://') && Boolean(aiModel.trim()))
+  const aiConfigValid = !aiEnabled || ((aiEndpoint.trim().startsWith('https://') || aiEndpoint.trim().startsWith('/')) && Boolean(aiModel.trim()))
   const habitLoggedToday = events.some((event) => event.type === 'masturbation_logged')
 
   async function saveSettings() {
@@ -158,6 +181,13 @@ export default function MorePage() {
         ramadanMode,
         proactiveCoachEnabled,
         browserNotificationsEnabled,
+        notificationStartHour,
+        notificationEndHour,
+        maxNotificationsPerDay,
+        mealNotificationsEnabled,
+        waterNotificationsEnabled,
+        creatineNotificationsEnabled,
+        prayerNotificationsEnabled,
       }),
       ])
 
@@ -165,8 +195,8 @@ export default function MorePage() {
       enabled: aiEnabled,
       endpoint: aiEndpoint.trim(),
       model: aiModel.trim(),
-      apiKey: aiApiKey.trim(),
       })
+      savePrayerSettings(prayerSettings)
 
       await regenerateDailyPlan(userId, today)
       setSaved(true)
@@ -200,6 +230,7 @@ export default function MorePage() {
   }
 
   async function markCreatine() {
+    const snapshot = await captureDayUndoSnapshot(userId, today)
     await creatineRepo.markTaken({
       userId,
       dateKey: today,
@@ -210,6 +241,16 @@ export default function MorePage() {
     const tasks = await dailyTaskRepo.list(userId, today)
     const task = tasks.find((item) => item.type === 'creatine' && !item.completed)
     if (task?.id) await dailyTaskRepo.setCompleted(task.id, true)
+    if (creatineUndoTimer) window.clearTimeout(creatineUndoTimer)
+    setCreatineUndo(snapshot)
+    setCreatineUndoTimer(window.setTimeout(() => setCreatineUndo(null), 12_000))
+  }
+
+  async function undoCreatine() {
+    if (!creatineUndo) return
+    await restoreDayUndoSnapshot(creatineUndo)
+    setCreatineUndo(null)
+    if (creatineUndoTimer) window.clearTimeout(creatineUndoTimer)
   }
 
   async function logHabitNow() {
@@ -227,32 +268,45 @@ export default function MorePage() {
   }
 
   async function exportData() {
-    const data = {
-      exportedAt: new Date().toISOString(),
-      users: await db.users.toArray(),
-      profiles: await db.profiles.toArray(),
-      goals: await db.goals.toArray(),
-      preferences: await db.preferences.toArray(),
-      weightLogs: await db.weightLogs.toArray(),
-      waterLogs: await db.waterLogs.toArray(),
-      availableFoods: await db.availableFoods.toArray(),
-      dailyCheckIns: await db.dailyCheckIns.toArray(),
-      dailyTasks: await db.dailyTasks.toArray(),
-      mealPlans: await db.mealPlans.toArray(),
-      mealLogs: await db.mealLogs.toArray(),
-      creatineLogs: await db.creatineLogs.toArray(),
-      dayEvents: await db.dayEvents.toArray(),
-      customFoods: await db.customFoods.toArray(),
-      coachMessages: await db.coachMessages.toArray(),
-    }
-
+    const data = await createBackup()
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = 'gym-life-coach-backup.json'
+    link.download = `gym-life-coach-v20-${new Date().toISOString().slice(0, 10)}.json`
     link.click()
     URL.revokeObjectURL(link.href)
+    setBackupMessage('تم إنشاء نسخة احتياطية كاملة تشمل البيانات والإعدادات.')
   }
+
+  async function chooseBackupFile(file: File | undefined) {
+    setBackupMessage('')
+    setBackupFile(null)
+    setBackupSummary(null)
+    if (!file) return
+    try {
+      const parsed = parseBackup(await file.text())
+      setBackupFile(parsed.backup)
+      setBackupSummary(parsed.summary)
+    } catch (error) {
+      setBackupMessage(error instanceof Error ? error.message : 'ملف النسخة الاحتياطية غير صالح.')
+    }
+  }
+
+  async function restoreBackup(mode: 'merge' | 'replace') {
+    if (!backupFile || importingBackup) return
+    setImportingBackup(true)
+    setBackupMessage('')
+    try {
+      await importBackup(backupFile, mode)
+      setBackupMessage(mode === 'replace' ? 'تم استبدال البيانات بالنسخة الاحتياطية.' : 'تم دمج النسخة الاحتياطية مع البيانات الحالية.')
+      window.setTimeout(() => window.location.reload(), 700)
+    } catch {
+      setBackupMessage('تعذر استيراد النسخة. لم يتم حذف ملف النسخة من جهازك.')
+    } finally {
+      setImportingBackup(false)
+    }
+  }
+
 
   return (
     <Page title="المزيد" subtitle="إعدادات قليلة ومتصلة بباقي يومك">
@@ -278,7 +332,7 @@ export default function MorePage() {
       </div>
 
       {(!profileValid || !creatineDoseValid || !aiConfigValid) && (
-        <p className="field-error">راجع البيانات غير الصحيحة قبل الحفظ. رابط AI يجب أن يبدأ بـ https:// عند تفعيله.</p>
+        <p className="field-error">راجع البيانات غير الصحيحة قبل الحفظ. رابط AI يجب أن يبدأ بـ / أو https:// عند تفعيله.</p>
       )}
       {settingsError && <p className="field-error">{settingsError}</p>}
 
@@ -405,6 +459,93 @@ export default function MorePage() {
         <p className="field-hint">فعّله في رمضان فقط، ثم اضغط «احفظ التغييرات» لإعادة ترتيب اليوم.</p>
       </Card>
 
+
+      <Card title="تنبيهات اليوم">
+        <div className="smart-coach-settings-head">
+          <Clock3 size={28} />
+          <div>
+            <h3>تنبيهات أقل وفي الوقت المناسب</h3>
+            <p>حدد فترة التنبيهات والحد الأقصى، واختر الأنواع التي تهمك.</p>
+          </div>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            بداية التنبيهات
+            <input type="time" value={`${String(notificationStartHour).padStart(2, '0')}:00`} onChange={(event) => setNotificationStartHour(Number(event.target.value.split(':')[0]))} />
+          </label>
+          <label>
+            نهاية التنبيهات
+            <input type="time" value={`${String(notificationEndHour).padStart(2, '0')}:00`} onChange={(event) => setNotificationEndHour(Number(event.target.value.split(':')[0]))} />
+          </label>
+          <label>
+            أقصى عدد يوميًا
+            <input type="number" min="1" max="12" value={maxNotificationsPerDay} onChange={(event) => setMaxNotificationsPerDay(Math.min(12, Math.max(1, Number(event.target.value) || 1)))} />
+          </label>
+        </div>
+
+        <div className="notification-category-grid">
+          <label className="toggle-row"><input type="checkbox" checked={mealNotificationsEnabled} onChange={(event) => setMealNotificationsEnabled(event.target.checked)} /><span>الأكل</span></label>
+          <label className="toggle-row"><input type="checkbox" checked={waterNotificationsEnabled} onChange={(event) => setWaterNotificationsEnabled(event.target.checked)} /><span>المياه</span></label>
+          <label className="toggle-row"><input type="checkbox" checked={creatineNotificationsEnabled} onChange={(event) => setCreatineNotificationsEnabled(event.target.checked)} /><span>الكرياتين</span></label>
+          <label className="toggle-row"><input type="checkbox" checked={prayerNotificationsEnabled} onChange={(event) => setPrayerNotificationsEnabled(event.target.checked)} /><span>الصلاة</span></label>
+        </div>
+        <p className="field-hint">لو تجاهلت نفس التنبيه، التطبيق لا يكرره بلا داعٍ في نفس اليوم.</p>
+      </Card>
+
+      <Card title="إعدادات مواقيت الصلاة">
+        <div className="smart-coach-settings-head">
+          <MapPin size={28} />
+          <div>
+            <h3>الموقع أو المدينة يدويًا</h3>
+            <p>اختر المدينة لو إذن الموقع مرفوض، وعدّل أي صلاة بدقائق بسيطة عند الحاجة.</p>
+          </div>
+        </div>
+
+        <div className="chips">
+          <button className={prayerSettings.locationMode === 'device' ? 'chip active' : 'chip'} onClick={() => setPrayerSettings((current) => ({ ...current, locationMode: 'device' }))}>موقع الجهاز</button>
+          <button className={prayerSettings.locationMode === 'manual' ? 'chip active' : 'chip'} onClick={() => setPrayerSettings((current) => ({ ...current, locationMode: 'manual' }))}>مدينة يدويًا</button>
+        </div>
+
+        {prayerSettings.locationMode === 'manual' && (
+          <label>
+            المدينة
+            <select value={prayerSettings.cityId} onChange={(event) => setPrayerSettings((current) => ({ ...current, cityId: event.target.value }))}>
+              {PRAYER_CITY_PRESETS.map((city) => <option key={city.id} value={city.id}>{city.label}</option>)}
+            </select>
+          </label>
+        )}
+
+        <label>
+          مصدر المواقيت
+          <select value={prayerSettings.sourceMode} onChange={(event) => setPrayerSettings((current) => ({ ...current, sourceMode: event.target.value as PrayerSettings['sourceMode'] }))}>
+            <option value="auto">الإنترنت عند توفره ثم الحساب المحلي</option>
+            <option value="offline">الحساب المحلي فقط</option>
+          </select>
+        </label>
+
+        <div className="prayer-adjustments-grid">
+          {([
+            ['Fajr', 'الفجر'], ['Dhuhr', 'الظهر'], ['Asr', 'العصر'], ['Maghrib', 'المغرب'], ['Isha', 'العشاء'],
+          ] as const).map(([key, label]) => (
+            <label key={key}>
+              {label} ± دقيقة
+              <input
+                type="number"
+                min="-30"
+                max="30"
+                value={prayerSettings.adjustments[key]}
+                onChange={(event) => setPrayerSettings((current) => ({
+                  ...current,
+                  adjustments: { ...current.adjustments, [key]: String(Math.min(30, Math.max(-30, Number(event.target.value) || 0))) },
+                }))}
+              />
+            </label>
+          ))}
+        </div>
+        <p className="field-hint">المصدر المختار والتعديلات يظهران في صفحة اليوم بعد الحفظ والتحديث.</p>
+      </Card>
+
       <Card title="المدرب الذكي">
         <div className="smart-coach-settings-head">
           <Bot size={30} />
@@ -456,18 +597,15 @@ export default function MorePage() {
           {aiEnabled && (
             <div className="ai-config-grid">
               <label>
-                رابط API المتوافق
-                <input value={aiEndpoint} onChange={(event) => setAiEndpoint(event.target.value)} placeholder="https://.../chat/completions" />
+                مسار الـWorker Proxy
+                <input value={aiEndpoint} onChange={(event) => setAiEndpoint(event.target.value)} placeholder="/api/coach" />
               </label>
               <label>
                 اسم الموديل
                 <input value={aiModel} onChange={(event) => setAiModel(event.target.value)} placeholder="اسم الموديل لدى مزودك" />
               </label>
-              <label>
-                مفتاح API
-                <input type="password" value={aiApiKey} onChange={(event) => setAiApiKey(event.target.value)} placeholder="يُحفظ محليًا على هذا الجهاز" />
-              </label>
-              <p className="field-hint">في تطبيق ويب، المفتاح المحفوظ على الجهاز ليس مناسبًا لمشروع عام. الأفضل لاحقًا استخدام Proxy أو Worker خاص بك.</p>
+              <p className="safety-note">مفتاح AI لا يُحفظ في الموبايل. ضعه كـSecret داخل Cloudflare باسم AI_API_KEY، مع AI_API_ENDPOINT وAI_MODEL.</p>
+              <p className="field-hint">المدرب لا يقدم أسماء تمارين أو جداول أو مجموعات وتكرارات؛ دوره تنظيم اليوم والجيم والتغذية والتعافي فقط.</p>
             </div>
           )}
         </div>
@@ -499,6 +637,9 @@ export default function MorePage() {
               <Pill size={18} />
               {creatineLog ? 'تم تسجيله اليوم' : 'سجل أني أخذته الآن'}
             </Button>
+            {creatineUndo && (
+              <button className="undo-inline" onClick={() => void undoCreatine()}><RotateCcw size={16} /> تراجع عن تسجيل الكرياتين</button>
+            )}
           </>
         )}
       </Card>
@@ -519,11 +660,31 @@ export default function MorePage() {
         )}
       </Card>
 
-      <Card title="نسخة احتياطية">
-        <Button variant="secondary" onClick={exportData}>
-          <Download size={18} />
-          تصدير بياناتي
-        </Button>
+      <Card title="النسخة الاحتياطية والاستعادة">
+        <p className="muted">الملف يشمل الوجبات والمياه والأوزان والخصر والإعدادات وسجل الجيم والكرياتين.</p>
+        <div className="button-row">
+          <Button variant="secondary" onClick={exportData}>
+            <Download size={18} />
+            تصدير بياناتي
+          </Button>
+          <label className="backup-upload-button">
+            <Upload size={18} /> اختر ملف استعادة
+            <input type="file" accept="application/json,.json" onChange={(event) => void chooseBackupFile(event.target.files?.[0])} />
+          </label>
+        </div>
+
+        {backupSummary && (
+          <div className="backup-summary">
+            <strong>الملف صالح — إصدار {backupSummary.version}</strong>
+            <span>{backupSummary.users} مستخدم • {backupSummary.mealLogs} وجبة • {backupSummary.waterLogs} تسجيل مياه • {backupSummary.weightLogs} وزن</span>
+            <small>{new Date(backupSummary.exportedAt).toLocaleString('ar-EG')}</small>
+            <div className="button-row">
+              <Button disabled={importingBackup} onClick={() => void restoreBackup('merge')}>دمج مع الحالي</Button>
+              <Button disabled={importingBackup} variant="secondary" onClick={() => void restoreBackup('replace')}>استبدال كل البيانات</Button>
+            </div>
+          </div>
+        )}
+        {backupMessage && <p className="safety-note">{backupMessage}</p>}
       </Card>
 
       <Card title="إعادة التطبيق من البداية" className="danger-card">

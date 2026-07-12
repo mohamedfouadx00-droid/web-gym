@@ -388,9 +388,44 @@ export function locationLabel(location: SmartLocation) {
   return 'غير محدد'
 }
 
-export async function notifyProactiveCoach(userId: string, dateKey: string, notice: ProactiveNotice) {
+function notificationCategoryFromKey(key: string): 'meal' | 'water' | 'creatine' | 'prayer' | 'general' {
+  if (key.includes('meal')) return 'meal'
+  if (key.includes('water')) return 'water'
+  if (key.includes('creatine')) return 'creatine'
+  if (key.includes('prayer')) return 'prayer'
+  return 'general'
+}
+
+function hourInsideWindow(hour: number, start: number, end: number) {
+  if (start === end) return true
+  if (start < end) return hour >= start && hour < end
+  return hour >= start || hour < end
+}
+
+export async function notifyProactiveCoach(
+  userId: string,
+  dateKey: string,
+  notice: ProactiveNotice,
+  preferences?: UserPreferences,
+) {
   if (typeof window === 'undefined' || typeof Notification === 'undefined') return false
   if (Notification.permission !== 'granted') return false
+
+  const now = new Date()
+  const start = preferences?.notificationStartHour ?? 8
+  const end = preferences?.notificationEndHour ?? 23
+  if (!hourInsideWindow(now.getHours(), start, end)) return false
+
+  const category = notificationCategoryFromKey(notice.key)
+  if (category === 'meal' && preferences?.mealNotificationsEnabled === false) return false
+  if (category === 'water' && preferences?.waterNotificationsEnabled === false) return false
+  if (category === 'creatine' && preferences?.creatineNotificationsEnabled === false) return false
+  if (category === 'prayer' && preferences?.prayerNotificationsEnabled === false) return false
+
+  const countKey = `gym.notificationCount.${userId}.${dateKey}`
+  const sentCount = Number(localStorage.getItem(countKey)) || 0
+  const maxPerDay = preferences?.maxNotificationsPerDay ?? 5
+  if (sentCount >= maxPerDay) return false
 
   const storageKey = `gym.proactiveNotice.${userId}.${dateKey}`
   const current = localStorage.getItem(storageKey)
@@ -411,6 +446,7 @@ export async function notifyProactiveCoach(userId: string, dateKey: string, noti
       new Notification(notice.title, options)
     }
     localStorage.setItem(storageKey, notice.key)
+    localStorage.setItem(countKey, String(sentCount + 1))
     return true
   } catch {
     return false

@@ -9,6 +9,7 @@ export type SeasonType = 'summer' | 'winter' | 'all'
 export type FoodKind = 'component' | 'complete_meal' | 'treat'
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'pre_gym' | 'post_gym'
 export type TaskResponse = 'done' | 'snoozed' | 'unavailable'
+export type NotificationCategory = 'meal' | 'water' | 'creatine' | 'prayer' | 'general'
 export type CoachRole = 'user' | 'assistant'
 export type CoachSource = 'local' | 'ai'
 export type EnergyLevel = 'low' | 'normal' | 'high'
@@ -67,6 +68,13 @@ export interface UserPreferences {
   ramadanMode?: boolean
   proactiveCoachEnabled?: boolean
   browserNotificationsEnabled?: boolean
+  notificationStartHour?: number
+  notificationEndHour?: number
+  maxNotificationsPerDay?: number
+  mealNotificationsEnabled?: boolean
+  waterNotificationsEnabled?: boolean
+  creatineNotificationsEnabled?: boolean
+  prayerNotificationsEnabled?: boolean
 }
 
 export interface FoodCatalogItem {
@@ -167,6 +175,13 @@ export interface WeightLog {
   id?: number
   userId: string
   valueKg: number
+  date: string
+}
+
+export interface WaistLog {
+  id?: number
+  userId: string
+  valueCm: number
   date: string
 }
 

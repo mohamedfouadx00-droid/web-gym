@@ -38,6 +38,10 @@ export async function syncDayWithDeviceClock(userId: string) {
   if (!pending.length) return false
 
   const now = nowMinutes()
+  const overdueMeal = pending.find((task) => task.type === 'meal' && now - task.timeMinutes >= 20)
+  // Keep a clearly overdue meal visible so the user can choose: ate something else,
+  // postpone, or skip it. Other tasks will be rescheduled after that decision.
+  if (overdueMeal) return false
   if (pending[0].timeMinutes >= now - 5) return false
 
   let cursor = now + 5

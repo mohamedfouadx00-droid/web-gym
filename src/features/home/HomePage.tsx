@@ -14,6 +14,7 @@ import {
   Moon,
   Pill,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   MapPin,
@@ -88,6 +89,7 @@ import {
 import { regenerateDailyPlan } from '../../services/planService'
 import { syncDayWithDeviceClock, taskClockLabel } from '../../services/timeAwareService'
 import { getPrayerTimes, type PrayerTimesResult } from '../../services/prayerTimesService'
+import { captureDayUndoSnapshot, restoreDayUndoSnapshot, type DayUndoSnapshot } from '../../services/dayUndoService'
 import {
   analyzeMealChoice,
   buildSmartShoppingList,
@@ -206,6 +208,7 @@ export default function HomePage() {
   const [actualFoodSearch, setActualFoodSearch] = useState('')
   const [actualFoodSource, setActualFoodSource] = useState<'home' | 'restaurant' | 'quick'>('home')
   const [selectedActualFoodId, setSelectedActualFoodId] = useState('')
+  const [actualServings, setActualServings] = useState('1')
   const [showEnergyPicker, setShowEnergyPicker] = useState(false)
   const [showIllnessPicker, setShowIllnessPicker] = useState(false)
   const [actualFeedback, setActualFeedback] = useState('')
@@ -216,6 +219,9 @@ export default function HomePage() {
   const [showPrayerDetails, setShowPrayerDetails] = useState(false)
   const [processingTaskId, setProcessingTaskId] = useState<number | null>(null)
   const [eventSaving, setEventSaving] = useState(false)
+  const [undoSnapshot, setUndoSnapshot] = useState<DayUndoSnapshot | null>(null)
+  const [undoLabel, setUndoLabel] = useState('')
+  const undoTimerRef = useRef<number | null>(null)
   const [showCoach, setShowCoach] = useState(false)
   const [coachQuestion, setCoachQuestion] = useState('')
   const [coachLoading, setCoachLoading] = useState(false)
@@ -347,9 +353,36 @@ useEffect(() => {
     [foodUniverse, availableIds, goal.primary, allMealLogs],
   )
   const selectedActualFood = foodUniverse.find((food) => food.id === selectedActualFoodId)
-  const selectedMealAnalysis = selectedActualFood
-    ? analyzeMealChoice(selectedActualFood, availableFoods, Math.max(0, (targets?.proteinG ?? 0) - consumedProtein))
+  const servings = Math.min(10, Math.max(0.25, Number(actualServings) || 1))
+  const scaledActualFood = selectedActualFood ? {
+    ...selectedActualFood,
+    nameAr: servings === 1 ? selectedActualFood.nameAr : `${selectedActualFood.nameAr} × ${servings}`,
+    calories: Math.round(selectedActualFood.calories * servings),
+    protein: Math.round(selectedActualFood.protein * servings * 10) / 10,
+    carbs: Math.round(selectedActualFood.carbs * servings * 10) / 10,
+    fats: Math.round(selectedActualFood.fats * servings * 10) / 10,
+  } : undefined
+  const selectedMealAnalysis = scaledActualFood
+    ? analyzeMealChoice(scaledActualFood, availableFoods, Math.max(0, (targets?.proteinG ?? 0) - consumedProtein))
     : undefined
+  const lateMealTask = tasks
+    .filter((task) => !task.completed && task.type === 'meal' && currentMinutes() - task.timeMinutes >= 20)
+    .sort((a, b) => a.timeMinutes - b.timeMinutes)[0]
+  const planChangeReasons = useMemo(() => {
+    const reasons: string[] = []
+    if (lateMealTask) reasons.push(`وجبة «${lateMealTask.title}» اتأخرت، لذلك منتظرين قرارك قبل تحريك باقي اليوم.`)
+    if (checkIn?.sleepHours !== undefined && checkIn.sleepHours < 6) reasons.push(`النوم المسجل ${checkIn.sleepHours} ساعة، فتم تخفيف ضغط اليوم وتعديل قرار شدة الجيم.`)
+    if (dayContext.illness) reasons.push('وضع التعب مفعّل، فالأولوية للراحة والمياه وتم إيقاف الضغط غير المناسب.')
+    if (dayContext.energy === 'low') reasons.push('الطاقة منخفضة، لذلك اتأجلت الخطوات الثقيلة لحين إعادة التقييم.')
+    if (isOutsideHome) reasons.push('إنت مسجل إنك بره البيت، فتحولت اقتراحات الأكل لاختيارات عملية من الخارج.')
+    if (events.some((event) => event.type === 'restaurant_meal')) reasons.push('تم تسجيل وجبة مطعم، فاتوزع باقي الأكل والسعرات على بقية اليوم.')
+    if (events.some((event) => event.type === 'day_messy')) reasons.push('استخدمت «يومي اتلخبط»، فتم بناء المواعيد من الوقت الحالي بدل الخطة القديمة.')
+    if (tasks.some((task) => task.response === 'snoozed' && !task.completed)) reasons.push('في خطوة اتأجلت يدويًا، فتم تحريك الخطوات التالية مع الحفاظ على الفواصل المناسبة.')
+    if (tasks.some((task) => task.contextKey?.includes('smart-water-deficit'))) reasons.push('شرب المياه أقل من المناسب لوقت اليوم، لذلك ظهر تعويض تدريجي للمياه.')
+    if (tasks.some((task) => task.contextKey?.includes('smart-long-meal-gap'))) reasons.push('مر وقت طويل من آخر وجبة، لذلك اتضافت وجبة عملية قبل استمرار اليوم.')
+    if (tasks.some((task) => task.type === 'prayer' && !task.completed && task.timeMinutes >= currentMinutes() - 10 && task.timeMinutes <= currentMinutes() + 30)) reasons.push('موعد صلاة قريب من الجيم، فالصلاة اتقدمت وتم منع التعارض.')
+    return reasons.length ? reasons.slice(0, 5) : ['الخطة الحالية مبنية على الساعة، نومك، الجيم، مكانك، الأكل المسجل والمياه. مفيش تغيير استثنائي الآن.']
+  }, [lateMealTask?.id, checkIn?.sleepHours, dayContext.illness, dayContext.energy, isOutsideHome, events, tasks])
   const isFriday = deviceNow.getDay() === 5
   const prayerBlocksGym = tasks.some((task) =>
     task.type === 'prayer' && !task.completed && task.timeMinutes >= currentMinutes() - 10 && task.timeMinutes <= currentMinutes() + 30
@@ -390,8 +423,8 @@ useEffect(() => {
 
   useEffect(() => {
     if (!proactiveNotice || !preferences.browserNotificationsEnabled) return
-    void notifyProactiveCoach(userId, today, proactiveNotice)
-  }, [proactiveNotice?.key, preferences.browserNotificationsEnabled, userId, today])
+    void notifyProactiveCoach(userId, today, proactiveNotice, preferences)
+  }, [proactiveNotice?.key, preferences, userId, today])
 
   function dismissProactiveNotice() {
     if (!proactiveNotice) return
@@ -457,7 +490,7 @@ useEffect(() => {
     } catch (error) {
       const isDenied = typeof GeolocationPositionError !== 'undefined' && error instanceof GeolocationPositionError && error.code === 1
       setPrayerError(isDenied
-        ? 'اسمح للموقع بالوصول لمكانك علشان نجيب مواقيت الصلاة بدقة.'
+        ? 'اسمح للموقع بالوصول، أو اختر مدينتك يدويًا من صفحة «المزيد».'
         : 'مقدرناش نجيب مواقيت الصلاة دلوقتي. جرّب تاني.')
     } finally {
       setPrayerLoading(false)
@@ -500,9 +533,37 @@ useEffect(() => {
     setSleepMessage('بدأت محاولة نوم جديدة من الوقت الحالي.')
   }
 
+  function offerUndo(snapshot: DayUndoSnapshot, label: string) {
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current)
+    setUndoSnapshot(snapshot)
+    setUndoLabel(label)
+    undoTimerRef.current = window.setTimeout(() => {
+      setUndoSnapshot(null)
+      setUndoLabel('')
+    }, 12_000)
+  }
+
+  async function undoLastAction() {
+    if (!undoSnapshot) return
+    await restoreDayUndoSnapshot(undoSnapshot)
+    setUndoSnapshot(null)
+    setUndoLabel('')
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current)
+    setActualFeedback('تم التراجع ورجعت حالة اليوم لما كانت عليه قبل التسجيل.')
+  }
+
+  async function skipLateMeal(task: DailyTask) {
+    if (!task.id) return
+    await dailyTaskRepo.markUnavailable(task.id)
+    await regenerateDailyPlan(userId, today)
+    setActualFeedback(`تم تخطي «${task.title}» وترتيب باقي اليوم بدون تعويض قاسي.`)
+  }
+
   async function completeTask(task: DailyTask) {
     if (!task.id || task.completed || processingTaskId !== null) return
     setProcessingTaskId(task.id)
+    const canUndo = task.type === 'water' || task.type === 'meal' || task.type === 'creatine'
+    const snapshot = canUndo ? await captureDayUndoSnapshot(userId, today) : null
 
     try {
       if (task.type === 'prayer') {
@@ -549,6 +610,7 @@ useEffect(() => {
 
       await dailyTaskRepo.setCompleted(task.id, true)
       await regenerateDailyPlan(userId, today)
+      if (snapshot) offerUndo(snapshot, task.type === 'water' ? 'تسجيل المياه' : task.type === 'creatine' ? 'تسجيل الكرياتين' : 'تسجيل الوجبة')
     } finally {
       setProcessingTaskId(null)
     }
@@ -567,15 +629,18 @@ useEffect(() => {
 
 
   async function confirmActualFood() {
-    if (!selectedActualFood || eventSaving) return
+    if (!scaledActualFood || eventSaving) return
     setEventSaving(true)
+    const snapshot = await captureDayUndoSnapshot(userId, today)
     try {
-      const mealTask = action?.type === 'meal' ? action : undefined
-      await logActualMealInstead(userId, mealTask, selectedActualFood, actualFoodSource)
+      const mealTask = action?.type === 'meal' ? action : lateMealTask
+      await logActualMealInstead(userId, mealTask, scaledActualFood, actualFoodSource)
       setShowActualFoodPicker(false)
       setShowActualEventMenu(false)
       setActualFoodSearch('')
       setSelectedActualFoodId('')
+      setActualServings('1')
+      offerUndo(snapshot, 'تسجيل الوجبة')
       setActualFeedback(actualFoodSource === 'restaurant'
         ? 'اتسجلت وجبة المطعم، وباقي اليوم اتظبط بدون جلد ذات أو إلغاء الخطة.'
         : 'اتسجل اللي أكلته فعلًا، وباقي اليوم اتعاد ترتيبه.')
@@ -590,8 +655,10 @@ useEffect(() => {
   async function recordWater(amount: number) {
     if (eventSaving) return
     setEventSaving(true)
+    const snapshot = await captureDayUndoSnapshot(userId, today)
     try {
       await logActualWaterNow(userId, amount)
+      offerUndo(snapshot, 'تسجيل المياه')
       setShowActualEventMenu(false)
       setActualFeedback(`تم تسجيل ${amount} مل مياه وتحديث حالة اليوم.`)
     } catch {
@@ -604,8 +671,10 @@ useEffect(() => {
   async function recordCreatine() {
     if (eventSaving) return
     setEventSaving(true)
+    const snapshot = await captureDayUndoSnapshot(userId, today)
     try {
       await logActualCreatineNow(userId)
+      offerUndo(snapshot, 'تسجيل الكرياتين')
       setShowActualEventMenu(false)
       setActualFeedback('تم تسجيل الكرياتين وإلغاء تذكيره من باقي اليوم.')
     } catch {
@@ -740,7 +809,7 @@ useEffect(() => {
         <Card title="مواقيت الصلاة اليوم" className="prayer-times-card">
           <div className="prayer-times-head">
             <div>
-              <span className="eyebrow">حسب موقعك الحالي</span>
+              <span className="eyebrow">حسب إعدادات الموقع والصلاة</span>
               {prayerTimes && (
                 <p className="muted prayer-location"><MapPin size={15} />{prayerTimes.cityLabel}</p>
               )}
@@ -921,6 +990,8 @@ useEffect(() => {
             <div className="why-box">
               <strong>{action?.title ?? 'لا توجد خطوة معلقة'}</strong>
               <p>{actionExplanation(action)}</p>
+              <h3>ليه الخطة اتغيرت؟</h3>
+              <ul className="reason-list">{planChangeReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
             </div>
           )}
         </section>
@@ -1017,7 +1088,23 @@ useEffect(() => {
         </Card>
       )}
 
-      {!isTryingToSleep && gymStage !== 'in_gym' && checkIn && action && (
+      {!isTryingToSleep && checkIn && lateMealTask && gymStage !== 'in_gym' && (
+        <Card className="late-meal-card">
+          <div>
+            <span className="eyebrow">الوجبة اتأخرت</span>
+            <h2>{lateMealTask.title}</h2>
+            <p>ميعادها كان {formatTimeAr(lateMealTask.timeMinutes)}. اختار اللي حصل فعلًا علشان باقي اليوم يتحرك صح.</p>
+          </div>
+          <div className="task-actions">
+            <Button disabled={processingTaskId !== null} onClick={() => void completeTask(lateMealTask)}><Check size={18} /> أكلتها</Button>
+            <Button variant="secondary" onClick={() => { setActualFoodSource('home'); setSelectedActualFoodId(''); setActualServings('1'); setShowActualFoodPicker(true) }}>أكلت حاجة تانية</Button>
+            <Button variant="secondary" onClick={() => void snoozeTaskAndReplan(lateMealTask, 30)}><AlarmClock size={18} /> أجّل 30 دقيقة</Button>
+            <Button variant="secondary" onClick={() => void skipLateMeal(lateMealTask)}>مش هاكلها</Button>
+          </div>
+        </Card>
+      )}
+
+      {!isTryingToSleep && gymStage !== 'in_gym' && checkIn && action && action.id !== lateMealTask?.id && (
         <section className="next-action-card">
           <div className="next-action-top">
             <span className="live-dot" />
@@ -1057,7 +1144,7 @@ useEffect(() => {
             )}
 
             {action.type === 'meal' && (
-              <Button variant="secondary" onClick={() => { setActualFoodSource('home'); setShowActualFoodPicker(true) }}>
+              <Button variant="secondary" onClick={() => { setActualFoodSource('home'); setActualServings('1'); setShowActualFoodPicker(true) }}>
                 أنا أكلت حاجة تانية
               </Button>
             )}
@@ -1086,6 +1173,13 @@ useEffect(() => {
           <CheckCircle2 size={24} />
           <div><h2>تم تحديث يومك</h2><p>{actualFeedback}</p></div>
         </Card>
+      )}
+
+      {undoSnapshot && !isTryingToSleep && (
+        <div className="undo-toast">
+          <span>تم {undoLabel}</span>
+          <button onClick={() => void undoLastAction()}><RotateCcw size={16} /> تراجع</button>
+        </div>
       )}
 
       {!isTryingToSleep && checkIn?.goingGym && gymStage === 'idle' && (
@@ -1269,8 +1363,8 @@ useEffect(() => {
       <p className="muted">كل اختيار يلغي الخطوات القديمة غير المنطقية ويرتب باقي اليوم من جديد.</p>
 
       <fieldset className="actual-event-grid" disabled={eventSaving}>
-        <button onClick={() => { setActualFoodSource('home'); setSelectedActualFoodId(''); setShowActualFoodPicker(true) }}><Utensils /><span><strong>أكلت حاجة</strong><small>في البيت أو من المعتاد</small></span></button>
-        <button onClick={() => { setActualFoodSource('restaurant'); setSelectedActualFoodId(''); setShowActualFoodPicker(true) }}><Store /><span><strong>أكلت من مطعم</strong><small>برجر، شاورما، كشري...</small></span></button>
+        <button onClick={() => { setActualFoodSource('home'); setSelectedActualFoodId(''); setActualServings('1'); setShowActualFoodPicker(true) }}><Utensils /><span><strong>أكلت حاجة</strong><small>في البيت أو من المعتاد</small></span></button>
+        <button onClick={() => { setActualFoodSource('restaurant'); setSelectedActualFoodId(''); setActualServings('1'); setShowActualFoodPicker(true) }}><Store /><span><strong>أكلت من مطعم</strong><small>برجر، شاورما، كشري...</small></span></button>
         <button onClick={() => recordWater(250)}><Waves /><span><strong>شربت مياه</strong><small>250 مل</small></span></button>
         <button onClick={() => recordWater(500)}><Waves /><span><strong>شربت مياه كتير</strong><small>500 مل</small></span></button>
         <button onClick={recordCreatine}><Pill /><span><strong>أخذت الكرياتين</strong><small>يلغي تذكيره اليوم</small></span></button>
@@ -1391,7 +1485,7 @@ useEffect(() => {
       {frequentFoods.length > 0 && actualFoodSource !== 'restaurant' && (
         <div className="frequent-meals">
           <strong>وجباتك المعتادة</strong>
-          <div>{frequentFoods.map((food) => <button key={food.id} onClick={() => { setSelectedActualFoodId(food.id); setActualFoodSource('quick') }}>{food.nameAr}</button>)}</div>
+          <div>{frequentFoods.map((food) => <button key={food.id} onClick={() => { setSelectedActualFoodId(food.id); setActualFoodSource('quick'); setActualServings('1') }}>{food.nameAr}</button>)}</div>
         </div>
       )}
 
@@ -1417,6 +1511,26 @@ useEffect(() => {
             </button>
           ))}
       </div>
+
+      {selectedActualFood && (
+        <div className="servings-control">
+          <label>
+            عدد الحصص
+            <input
+              type="number"
+              min="0.25"
+              max="10"
+              step="0.25"
+              value={actualServings}
+              onChange={(event) => setActualServings(event.target.value)}
+            />
+          </label>
+          <div>
+            <strong>{scaledActualFood?.calories ?? 0} سعر تقريبي</strong>
+            <span>{scaledActualFood?.protein ?? 0} جم بروتين</span>
+          </div>
+        </div>
+      )}
 
       {selectedActualFood && selectedMealAnalysis && (
         <div className={`meal-analysis ${selectedMealAnalysis.enough ? 'enough' : ''}`}>

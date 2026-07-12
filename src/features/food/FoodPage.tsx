@@ -68,6 +68,11 @@ export default function FoodPage() {
   const [showCustom, setShowCustom] = useState(false)
   const [customName, setCustomName] = useState('')
   const [customCategory, setCustomCategory] = useState<FoodCategory>('meal')
+  const [customServing, setCustomServing] = useState('حصة متوسطة')
+  const [customCalories, setCustomCalories] = useState('550')
+  const [customProtein, setCustomProtein] = useState('25')
+  const [customCarbs, setCustomCarbs] = useState('60')
+  const [customFats, setCustomFats] = useState('22')
   const [customSaving, setCustomSaving] = useState(false)
   const [deletingCustomId, setDeletingCustomId] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
@@ -96,6 +101,15 @@ export default function FoodPage() {
     const timeout = window.setTimeout(() => setStatusMessage(''), 3500)
     return () => window.clearTimeout(timeout)
   }, [statusMessage])
+
+  useEffect(() => {
+    const nutrition = defaultNutrition[customCategory]
+    setCustomServing(customCategory === 'meal' ? 'حصة متوسطة' : 'حصة واحدة')
+    setCustomCalories(String(nutrition.calories))
+    setCustomProtein(String(nutrition.protein))
+    setCustomCarbs(String(nutrition.carbs))
+    setCustomFats(String(nutrition.fats))
+  }, [customCategory])
 
   const allFoods = useMemo(
     () => sortFoodsForSeason([...foodCatalog, ...customFoods], season),
@@ -132,14 +146,19 @@ export default function FoodPage() {
     setErrorMessage('')
     try {
       const id = `custom-${crypto.randomUUID()}`
-      const nutrition = defaultNutrition[customCategory]
+      const nutrition = {
+        calories: Math.max(0, Number(customCalories) || defaultNutrition[customCategory].calories),
+        protein: Math.max(0, Number(customProtein) || 0),
+        carbs: Math.max(0, Number(customCarbs) || 0),
+        fats: Math.max(0, Number(customFats) || 0),
+      }
       const food: FoodCatalogItem & { userId: string; createdAt: string } = {
         id,
         userId,
         createdAt: new Date().toISOString(),
         nameAr: name,
         category: customCategory,
-        servingLabel: customCategory === 'meal' ? 'حصة متوسطة' : 'حصة',
+        servingLabel: customServing.trim() || (customCategory === 'meal' ? 'حصة متوسطة' : 'حصة واحدة'),
         ...nutrition,
         season: 'all',
         kind:
@@ -153,6 +172,7 @@ export default function FoodPage() {
       await customFoodRepo.add(food)
       setSelected((current) => new Set([...current, id]))
       setCustomName('')
+      setCustomServing('حصة متوسطة')
       setShowCustom(false)
       setStatusMessage('تمت إضافة الصنف واختياره ضمن المتاح. اضغط حفظ لتحديث الخطة.')
     } catch {
@@ -401,8 +421,31 @@ export default function FoodPage() {
               </select>
             </label>
 
+            <div className="form-grid custom-food-nutrition-grid">
+              <label>
+                وصف الحصة
+                <input value={customServing} onChange={(event) => setCustomServing(event.target.value)} placeholder="مثال: طبق متوسط أو 2 قطعة" />
+              </label>
+              <label>
+                السعرات للحصة
+                <input inputMode="decimal" value={customCalories} onChange={(event) => setCustomCalories(event.target.value.replace(/[^0-9.]/g, '').slice(0, 6))} />
+              </label>
+              <label>
+                البروتين (جم)
+                <input inputMode="decimal" value={customProtein} onChange={(event) => setCustomProtein(event.target.value.replace(/[^0-9.]/g, '').slice(0, 5))} />
+              </label>
+              <label>
+                النشويات (جم)
+                <input inputMode="decimal" value={customCarbs} onChange={(event) => setCustomCarbs(event.target.value.replace(/[^0-9.]/g, '').slice(0, 5))} />
+              </label>
+              <label>
+                الدهون (جم)
+                <input inputMode="decimal" value={customFats} onChange={(event) => setCustomFats(event.target.value.replace(/[^0-9.]/g, '').slice(0, 5))} />
+              </label>
+            </div>
+
             <p className="safety-note">
-              السعرات والبروتين للطعام المضاف يدويًا هتكون تقديرية حسب النوع، لأنك لم تدخل وصفة أو وزن دقيق.
+              القيم اختيارية وتقريبية. اكتب الكمية المعتادة عندك علشان تسجيل الوجبات يبقى أدق.
             </p>
 
             {errorMessage && <p className="form-error">{errorMessage}</p>}

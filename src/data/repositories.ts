@@ -13,6 +13,7 @@ import type {
   UserProfile,
   WaterLog,
   WeightLog,
+  WaistLog,
   CoachMessage,
 } from '../domain/models'
 
@@ -192,6 +193,11 @@ export const creatineRepo = {
 export const weightRepo = {
   list: (userId: string) => db.weightLogs.where('userId').equals(userId).reverse().sortBy('date'),
   add: (value: WeightLog) => db.weightLogs.add(value),
+}
+
+export const waistRepo = {
+  list: (userId: string) => db.waistLogs.where('userId').equals(userId).reverse().sortBy('date'),
+  add: (value: WaistLog) => db.waistLogs.add(value),
 }
 
 export const dayEventRepo = {

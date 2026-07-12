@@ -15,6 +15,80 @@ export interface PrayerTimesResult {
   source?: 'network' | 'offline'
 }
 
+
+export type PrayerSourceMode = 'auto' | 'offline'
+export type PrayerLocationMode = 'device' | 'manual'
+
+export interface PrayerSettings {
+  sourceMode: PrayerSourceMode
+  locationMode: PrayerLocationMode
+  cityId: string
+  adjustments: PrayerTimes
+}
+
+export const PRAYER_CITY_PRESETS = [
+  { id: 'cairo', label: 'القاهرة', latitude: 30.0444, longitude: 31.2357 },
+  { id: 'giza', label: 'الجيزة', latitude: 30.0131, longitude: 31.2089 },
+  { id: 'alexandria', label: 'الإسكندرية', latitude: 31.2001, longitude: 29.9187 },
+  { id: 'mansoura', label: 'المنصورة', latitude: 31.0409, longitude: 31.3785 },
+  { id: 'tanta', label: 'طنطا', latitude: 30.7865, longitude: 31.0004 },
+  { id: 'zagazig', label: 'الزقازيق', latitude: 30.5877, longitude: 31.5020 },
+  { id: 'ismailia', label: 'الإسماعيلية', latitude: 30.5965, longitude: 32.2715 },
+  { id: 'portsaid', label: 'بورسعيد', latitude: 31.2653, longitude: 32.3019 },
+  { id: 'suez', label: 'السويس', latitude: 29.9668, longitude: 32.5498 },
+  { id: 'assiut', label: 'أسيوط', latitude: 27.1809, longitude: 31.1837 },
+  { id: 'luxor', label: 'الأقصر', latitude: 25.6872, longitude: 32.6396 },
+  { id: 'aswan', label: 'أسوان', latitude: 24.0889, longitude: 32.8998 },
+] as const
+
+const PRAYER_SETTINGS_KEY = 'gym.prayerSettings.v1'
+const defaultPrayerSettings: PrayerSettings = {
+  sourceMode: 'auto',
+  locationMode: 'device',
+  cityId: 'cairo',
+  adjustments: { Fajr: '0', Dhuhr: '0', Asr: '0', Maghrib: '0', Isha: '0' },
+}
+
+export function getPrayerSettings(): PrayerSettings {
+  try {
+    const raw = localStorage.getItem(PRAYER_SETTINGS_KEY)
+    if (!raw) return defaultPrayerSettings
+    const parsed = JSON.parse(raw) as Partial<PrayerSettings>
+    return {
+      ...defaultPrayerSettings,
+      ...parsed,
+      adjustments: { ...defaultPrayerSettings.adjustments, ...(parsed.adjustments ?? {}) },
+    }
+  } catch {
+    return defaultPrayerSettings
+  }
+}
+
+export function savePrayerSettings(settings: PrayerSettings) {
+  localStorage.setItem(PRAYER_SETTINGS_KEY, JSON.stringify(settings))
+  localStorage.removeItem(CACHE_KEY)
+}
+
+function settingsSignature(settings = getPrayerSettings()) {
+  return JSON.stringify(settings)
+}
+
+function shiftTime(value: string, minutes: number) {
+  const [hours, mins] = value.split(':').map(Number)
+  const total = (((hours || 0) * 60 + (mins || 0) + minutes) % 1440 + 1440) % 1440
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+function applyPrayerAdjustments(timings: PrayerTimes, settings: PrayerSettings): PrayerTimes {
+  return {
+    Fajr: shiftTime(timings.Fajr, Number(settings.adjustments.Fajr) || 0),
+    Dhuhr: shiftTime(timings.Dhuhr, Number(settings.adjustments.Dhuhr) || 0),
+    Asr: shiftTime(timings.Asr, Number(settings.adjustments.Asr) || 0),
+    Maghrib: shiftTime(timings.Maghrib, Number(settings.adjustments.Maghrib) || 0),
+    Isha: shiftTime(timings.Isha, Number(settings.adjustments.Isha) || 0),
+  }
+}
+
 interface StoredLocation {
   latitude: number
   longitude: number
@@ -28,10 +102,10 @@ function todayKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function getStoredPrayerTimes(): (PrayerTimesResult & { dayKey?: string }) | null {
+function getStoredPrayerTimes(): (PrayerTimesResult & { dayKey?: string; settingsSignature?: string }) | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
-    return raw ? JSON.parse(raw) as PrayerTimesResult & { dayKey?: string } : null
+    return raw ? JSON.parse(raw) as PrayerTimesResult & { dayKey?: string; settingsSignature?: string } : null
   } catch {
     return null
   }
@@ -39,12 +113,12 @@ function getStoredPrayerTimes(): (PrayerTimesResult & { dayKey?: string }) | nul
 
 export function getCachedPrayerTimes(): PrayerTimesResult | null {
   const parsed = getStoredPrayerTimes()
-  if (!parsed || parsed.dayKey !== todayKey()) return null
+  if (!parsed || parsed.dayKey !== todayKey() || parsed.settingsSignature !== settingsSignature()) return null
   return parsed
 }
 
 function saveCache(value: PrayerTimesResult) {
-  localStorage.setItem(CACHE_KEY, JSON.stringify({ ...value, dayKey: todayKey() }))
+  localStorage.setItem(CACHE_KEY, JSON.stringify({ ...value, dayKey: todayKey(), settingsSignature: settingsSignature() }))
   saveLocation(value.latitude, value.longitude)
 }
 
@@ -244,28 +318,45 @@ export async function getPrayerTimes(forceRefresh = false): Promise<PrayerTimesR
     if (cached) return cached
   }
 
+  const settings = getPrayerSettings()
   let latitude: number
   let longitude: number
+  let manualCityLabel = ''
 
-  try {
-    const position = await getPosition()
-    latitude = position.coords.latitude
-    longitude = position.coords.longitude
-    saveLocation(latitude, longitude)
-  } catch (positionError) {
-    const stored = getStoredLocation()
-    if (!stored) throw positionError
-    latitude = stored.latitude
-    longitude = stored.longitude
+  if (settings.locationMode === 'manual') {
+    const city = PRAYER_CITY_PRESETS.find((item) => item.id === settings.cityId) ?? PRAYER_CITY_PRESETS[0]
+    latitude = city.latitude
+    longitude = city.longitude
+    manualCityLabel = city.label
+  } else {
+    try {
+      const position = await getPosition()
+      latitude = position.coords.latitude
+      longitude = position.coords.longitude
+      saveLocation(latitude, longitude)
+    } catch (positionError) {
+      const stored = getStoredLocation()
+      if (!stored) throw positionError
+      latitude = stored.latitude
+      longitude = stored.longitude
+    }
   }
 
   let result: PrayerTimesResult
   try {
-    result = navigator.onLine
+    result = settings.sourceMode === 'auto' && navigator.onLine
       ? await fetchNetworkPrayerTimes(latitude, longitude)
       : offlineResult(latitude, longitude)
   } catch {
     result = offlineResult(latitude, longitude)
+  }
+
+  result = {
+    ...result,
+    timings: applyPrayerAdjustments(result.timings, settings),
+    cityLabel: manualCityLabel
+      ? `${manualCityLabel} • ${result.source === 'offline' ? 'حساب محلي' : 'مزامنة عبر الإنترنت'}`
+      : result.cityLabel,
   }
 
   saveCache(result)
