@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FocusEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Download, Pill, Save, Trash2 } from 'lucide-react'
+import { Bell, Bot, Download, Moon, Pill, Save, Trash2, Wifi, WifiOff } from 'lucide-react'
 import { appSettings, db } from '../../data/db'
 import {
   creatineRepo,
@@ -26,6 +26,7 @@ import type {
 } from '../../domain/models'
 import { logMasturbation } from '../../services/dayManagerService'
 import { regenerateDailyPlan } from '../../services/planService'
+import { getCoachAiConfig, saveCoachAiConfig } from '../../services/smartCoachService'
 import { Button, Card, Page, Stat } from '../../components/UI'
 
 const selectAll = (event: FocusEvent<HTMLInputElement>) => event.currentTarget.select()
@@ -55,7 +56,18 @@ export default function MorePage() {
   const [gymPeriod, setGymPeriod] = useState<GymPeriod>('auto')
   const [creatineEnabled, setCreatineEnabled] = useState(true)
   const [creatineDose, setCreatineDose] = useState('5')
+  const [ramadanMode, setRamadanMode] = useState(false)
+  const [proactiveCoachEnabled, setProactiveCoachEnabled] = useState(true)
+  const [browserNotificationsEnabled, setBrowserNotificationsEnabled] = useState(false)
+  const initialAiConfig = useMemo(() => getCoachAiConfig(), [])
+  const [aiEnabled, setAiEnabled] = useState(initialAiConfig.enabled)
+  const [aiEndpoint, setAiEndpoint] = useState(initialAiConfig.endpoint)
+  const [aiModel, setAiModel] = useState(initialAiConfig.model)
+  const [aiApiKey, setAiApiKey] = useState(initialAiConfig.apiKey)
+  const [notificationMessage, setNotificationMessage] = useState('')
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [settingsError, setSettingsError] = useState('')
   const [habitSaved, setHabitSaved] = useState(false)
   const [resetText, setResetText] = useState('')
   const [resetting, setResetting] = useState(false)
@@ -77,7 +89,10 @@ export default function MorePage() {
     setGymPeriod(preferences.gymPeriod)
     setCreatineEnabled(preferences.creatineEnabled)
     setCreatineDose(String(preferences.creatineDoseG))
-  }, [preferences.gymPeriod, preferences.creatineEnabled, preferences.creatineDoseG])
+    setRamadanMode(Boolean(preferences.ramadanMode))
+    setProactiveCoachEnabled(preferences.proactiveCoachEnabled !== false)
+    setBrowserNotificationsEnabled(Boolean(preferences.browserNotificationsEnabled))
+  }, [preferences.gymPeriod, preferences.creatineEnabled, preferences.creatineDoseG, preferences.ramadanMode, preferences.proactiveCoachEnabled, preferences.browserNotificationsEnabled])
 
   const profileDraft = useMemo<UserProfile>(() => ({
     id: profile?.id,
@@ -106,12 +121,33 @@ export default function MorePage() {
   ])
 
   const recommendation = useMemo(() => recommendGoal(profileDraft), [profileDraft])
+
+  const currentYear = new Date().getFullYear()
+  const profileValid = Boolean(
+    name.trim().length >= 2
+    && Number(birthYear) >= currentYear - 80
+    && Number(birthYear) <= currentYear - 16
+    && Number(height) >= 120
+    && Number(height) <= 230
+    && Number(weight) >= 35
+    && Number(weight) <= 300
+    && (!waist || (Number(waist) >= 40 && Number(waist) <= 220))
+  )
+  const creatineDoseValid = !creatineEnabled || (Number(creatineDose) >= 1 && Number(creatineDose) <= 10)
+  const aiConfigValid = !aiEnabled || (aiEndpoint.trim().startsWith('https://') && Boolean(aiModel.trim()))
   const habitLoggedToday = events.some((event) => event.type === 'masturbation_logged')
 
   async function saveSettings() {
-    if (!profile) return
+    if (!profile || saving) return
+    if (!profileValid || !creatineDoseValid || !aiConfigValid) {
+      setSettingsError('راجع البيانات: العمر والطول والوزن والجرعة، ورابط AI الآمن لو هو مفعّل.')
+      return
+    }
+    setSaving(true)
+    setSettingsError('')
 
-    await Promise.all([
+    try {
+      await Promise.all([
       profileRepo.save(profileDraft),
       goalRepo.save({ ...goal, primary: recommendation.goal }),
       preferencesRepo.save({
@@ -119,12 +155,48 @@ export default function MorePage() {
         gymPeriod,
         creatineEnabled,
         creatineDoseG: Number(creatineDose),
+        ramadanMode,
+        proactiveCoachEnabled,
+        browserNotificationsEnabled,
       }),
-    ])
+      ])
 
-    await regenerateDailyPlan(userId, today)
-    setSaved(true)
-    window.setTimeout(() => setSaved(false), 1800)
+      saveCoachAiConfig({
+      enabled: aiEnabled,
+      endpoint: aiEndpoint.trim(),
+      model: aiModel.trim(),
+      apiKey: aiApiKey.trim(),
+      })
+
+      await regenerateDailyPlan(userId, today)
+      setSaved(true)
+      window.setTimeout(() => setSaved(false), 1800)
+    } catch {
+      setSettingsError('حصل خطأ أثناء الحفظ. بياناتك القديمة لم تُحذف؛ جرّب مرة أخرى.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function requestNotifications() {
+    if (typeof Notification === 'undefined' || !window.isSecureContext) {
+      setNotificationMessage('تنبيهات الجهاز تحتاج متصفحًا داعمًا واتصال HTTPS.')
+      setBrowserNotificationsEnabled(false)
+      return
+    }
+
+    try {
+      const permission = await Notification.requestPermission()
+      const granted = permission === 'granted'
+      setBrowserNotificationsEnabled(granted)
+      await preferencesRepo.save({ ...preferences, browserNotificationsEnabled: granted })
+      setNotificationMessage(granted
+        ? 'تم السماح بالتنبيهات وحفظ الإعداد تلقائيًا.'
+        : 'الإذن لم يُمنح. التنبيهات ستظل تظهر داخل التطبيق فقط.')
+    } catch {
+      setBrowserNotificationsEnabled(false)
+      setNotificationMessage('تعذر طلب إذن التنبيهات من المتصفح.')
+    }
   }
 
   async function markCreatine() {
@@ -167,8 +239,11 @@ export default function MorePage() {
       dailyCheckIns: await db.dailyCheckIns.toArray(),
       dailyTasks: await db.dailyTasks.toArray(),
       mealPlans: await db.mealPlans.toArray(),
+      mealLogs: await db.mealLogs.toArray(),
       creatineLogs: await db.creatineLogs.toArray(),
       dayEvents: await db.dayEvents.toArray(),
+      customFoods: await db.customFoods.toArray(),
+      coachMessages: await db.coachMessages.toArray(),
     }
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -190,6 +265,22 @@ export default function MorePage() {
           value={creatineEnabled ? (creatineLog ? 'تم أخذه' : 'لسه') : 'غير مفعل'}
         />
       </div>
+
+      <div className="settings-save-bar">
+        <div>
+          <strong>{saved ? 'تم حفظ الإعدادات' : 'أي تعديل يحتاج حفظ'}</strong>
+          <small>{saved ? 'تمت إعادة ترتيب اليوم بالقيم الجديدة.' : 'زر الحفظ يظل ظاهرًا أثناء تصفح الإعدادات.'}</small>
+        </div>
+        <Button disabled={saving || !profileValid || !creatineDoseValid || !aiConfigValid} onClick={saveSettings}>
+          <Save size={18} />
+          {saving ? 'بحفظ...' : saved ? 'تم' : 'احفظ'}
+        </Button>
+      </div>
+
+      {(!profileValid || !creatineDoseValid || !aiConfigValid) && (
+        <p className="field-error">راجع البيانات غير الصحيحة قبل الحفظ. رابط AI يجب أن يبدأ بـ https:// عند تفعيله.</p>
+      )}
+      {settingsError && <p className="field-error">{settingsError}</p>}
 
       <Card title="بياناتي">
         <label>الاسم<input value={name} onChange={(event) => setName(event.target.value)} /></label>
@@ -295,6 +386,93 @@ export default function MorePage() {
         </div>
       </Card>
 
+      <Card title="وضع رمضان">
+        <div className="ramadan-settings-card">
+          <Moon size={28} />
+          <div>
+            <h3>خطة صيام متكاملة</h3>
+            <p>يرتب الإفطار والمغرب والعشاء والتراويح والسحور والمياه، وينقل الجيم لما بعد الإفطار.</p>
+          </div>
+        </div>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={ramadanMode}
+            onChange={(event) => setRamadanMode(event.target.checked)}
+          />
+          <span>{ramadanMode ? 'وضع رمضان مفعل' : 'فعّل وضع رمضان'}</span>
+        </label>
+        <p className="field-hint">فعّله في رمضان فقط، ثم اضغط «احفظ التغييرات» لإعادة ترتيب اليوم.</p>
+      </Card>
+
+      <Card title="المدرب الذكي">
+        <div className="smart-coach-settings-head">
+          <Bot size={30} />
+          <div>
+            <h3>المحرك المحلي مجاني ويعمل بدون إنترنت</h3>
+            <p>يفهم الوقت والموسم والجمعة والمكان والنوم والأكل والهدف، ويغيّر خطة اليوم بقواعد داخلية.</p>
+          </div>
+        </div>
+
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={proactiveCoachEnabled}
+            onChange={(event) => setProactiveCoachEnabled(event.target.checked)}
+          />
+          <span>خلّي المدرب يبدأ الكلام عند وجود ملاحظة مهمة</span>
+        </label>
+
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={browserNotificationsEnabled}
+            onChange={(event) => {
+              if (event.target.checked) void requestNotifications()
+              else {
+                setBrowserNotificationsEnabled(false)
+                void preferencesRepo.save({ ...preferences, browserNotificationsEnabled: false })
+              }
+            }}
+          />
+          <span><Bell size={17} /> تنبيهات الجهاز عند السماح بها</span>
+        </label>
+        {notificationMessage && <p className="field-hint">{notificationMessage}</p>}
+
+        <div className="ai-optional-box">
+          <div className="ai-optional-title">
+            {aiEnabled ? <Wifi size={20} /> : <WifiOff size={20} />}
+            <div>
+              <strong>AI اختياري</strong>
+              <small>زر «اسأل المدرب الذكي» يعمل محليًا دائمًا. فعّل الاتصال الخارجي فقط لو عندك خدمة AI متوافقة.</small>
+            </div>
+          </div>
+
+          <label className="toggle-row">
+            <input type="checkbox" checked={aiEnabled} onChange={(event) => setAiEnabled(event.target.checked)} />
+            <span>{aiEnabled ? 'استخدم AI الخارجي مع رجوع تلقائي للمحرك المحلي' : 'استخدم المحرك المحلي فقط'}</span>
+          </label>
+
+          {aiEnabled && (
+            <div className="ai-config-grid">
+              <label>
+                رابط API المتوافق
+                <input value={aiEndpoint} onChange={(event) => setAiEndpoint(event.target.value)} placeholder="https://.../chat/completions" />
+              </label>
+              <label>
+                اسم الموديل
+                <input value={aiModel} onChange={(event) => setAiModel(event.target.value)} placeholder="اسم الموديل لدى مزودك" />
+              </label>
+              <label>
+                مفتاح API
+                <input type="password" value={aiApiKey} onChange={(event) => setAiApiKey(event.target.value)} placeholder="يُحفظ محليًا على هذا الجهاز" />
+              </label>
+              <p className="field-hint">في تطبيق ويب، المفتاح المحفوظ على الجهاز ليس مناسبًا لمشروع عام. الأفضل لاحقًا استخدام Proxy أو Worker خاص بك.</p>
+            </div>
+          )}
+        </div>
+      </Card>
+
       <Card title="الكرياتين">
         <label className="toggle-row">
           <input
@@ -340,11 +518,6 @@ export default function MorePage() {
           </p>
         )}
       </Card>
-
-      <Button onClick={saveSettings}>
-        <Save size={18} />
-        {saved ? 'تم الحفظ وإعادة ترتيب اليوم' : 'احفظ التغييرات'}
-      </Button>
 
       <Card title="نسخة احتياطية">
         <Button variant="secondary" onClick={exportData}>

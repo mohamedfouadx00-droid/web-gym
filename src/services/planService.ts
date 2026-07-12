@@ -1,16 +1,23 @@
 import {
   availableFoodRepo,
   checkInRepo,
+  customFoodRepo,
   dailyTaskRepo,
   dayEventRepo,
   goalRepo,
+  mealLogRepo,
   mealPlanRepo,
   preferencesRepo,
   profileRepo,
+  waterRepo,
+  creatineRepo,
 } from '../data/repositories'
 import { foodCatalog } from '../data/foodCatalog'
 import { buildDailyPlan, normalizeGoal, normalizePreferences, recommendGoal } from '../domain/dailyCoach'
 import type { DailyTask, MealPlanItem } from '../domain/models'
+import { applyDayIntelligence, applyPrayerPriority } from './dayIntelligenceService'
+import { getCachedPrayerTimes } from './prayerTimesService'
+import { applyOfflineSmartEngine, buildSmartDaySnapshot, isRamadanFastingNow } from './smartEngineService'
 
 function gymStage(events: Awaited<ReturnType<typeof dayEventRepo.list>>) {
   const lastGym = [...events].reverse().find((event) =>
@@ -50,16 +57,24 @@ export async function regenerateDailyPlan(userId: string, date: string) {
     rawPreferences,
     checkIn,
     foodRows,
+    customFoods,
     events,
     oldTasks,
+    mealLogs,
+    waterLogs,
+    creatineLog,
   ] = await Promise.all([
     profileRepo.get(userId),
     goalRepo.get(userId),
     preferencesRepo.get(userId),
     checkInRepo.get(userId, date),
     availableFoodRepo.list(userId, date),
+    customFoodRepo.list(userId),
     dayEventRepo.list(userId, date),
     dailyTaskRepo.list(userId, date),
+    mealLogRepo.list(userId, date),
+    waterRepo.list(userId),
+    creatineRepo.get(userId, date),
   ])
 
   if (!profile || !checkIn) return null
@@ -73,7 +88,8 @@ export async function regenerateDailyPlan(userId: string, date: string) {
 
   const preferences = normalizePreferences(rawPreferences, userId)
   const selectedIds = new Set(foodRows.map((row) => row.foodId))
-  const availableFoods = foodCatalog.filter((food) => selectedIds.has(food.id))
+  const allFoods = [...foodCatalog, ...customFoods]
+  const availableFoods = allFoods.filter((food) => selectedIds.has(food.id))
 
   const plan = buildDailyPlan({
     profile,
@@ -114,19 +130,68 @@ export async function regenerateDailyPlan(userId: string, date: string) {
     })
   }
 
+  const prayerTimes = getCachedPrayerTimes()
+  const intelligent = applyDayIntelligence({
+    tasks,
+    meals,
+    events,
+    preferences,
+    prayerTimes,
+    userId,
+    dateKey: date,
+    nowMinutes,
+  })
+  tasks = intelligent.tasks
+  meals = intelligent.meals
+
+  const snapshot = buildSmartDaySnapshot({
+    now,
+    checkIn,
+    tasks,
+    mealLogs,
+    waterLogs,
+    creatineLog,
+    events,
+    goal,
+    waterTargetMl: plan.targets.waterMl,
+    fastingNow: Boolean(preferences.ramadanMode) && isRamadanFastingNow(prayerTimes, nowMinutes),
+  })
+  const smart = applyOfflineSmartEngine({
+    tasks,
+    meals,
+    snapshot,
+    preferences,
+    userId,
+    dateKey: date,
+  })
+  tasks = applyPrayerPriority({
+    tasks: smart.tasks,
+    prayerTimes,
+    userId,
+    dateKey: date,
+    ramadanMode: Boolean(preferences.ramadanMode),
+  })
+  meals = smart.meals
+
+  const taskStateKey = (task: DailyTask) =>
+    task.contextKey ?? `${task.type}|${task.title}|${task.mealKey ?? ''}`
+
   const oldState = new Map(
     oldTasks.map((task) => [
-      `${task.type}|${task.title}|${task.mealKey ?? ''}`,
-      { completed: task.completed, response: task.response },
+      taskStateKey(task),
+      { completed: task.completed, response: task.response, timeMinutes: task.timeMinutes },
     ]),
   )
 
   tasks = tasks.map((task) => {
-    const state = oldState.get(`${task.type}|${task.title}|${task.mealKey ?? ''}`)
+    const state = oldState.get(taskStateKey(task))
     return {
       ...task,
       completed: state?.completed ?? false,
       response: state?.response,
+      timeMinutes: state?.response === 'snoozed' && !state.completed
+        ? state.timeMinutes
+        : task.timeMinutes,
     }
   })
 

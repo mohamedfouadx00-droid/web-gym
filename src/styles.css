@@ -681,3 +681,353 @@ label{display:grid;gap:8px;color:#dce4f0}
 .compact-decisions .decision-card{
   min-height:120px;
 }
+
+
+/* ===== V12 seasonal food universe ===== */
+.season-banner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:18px;
+  border-radius:20px;
+  border:1px solid rgba(6,182,212,.28);
+  background:
+    radial-gradient(circle at top left,rgba(6,182,212,.12),transparent 42%),
+    var(--surface-1);
+}
+.season-banner h2{margin:.2rem 0 .35rem}
+.season-banner p{margin:0;color:var(--muted);line-height:1.7}
+.season-badge{
+  width:58px;
+  height:58px;
+  display:grid;
+  place-items:center;
+  border-radius:18px;
+  background:rgba(255,255,255,.06);
+  font-size:1.8rem;
+  flex:0 0 auto;
+}
+
+.food-select-card.availability-card{
+  position:relative;
+  padding:0;
+  overflow:hidden;
+}
+.food-card-main{
+  width:100%;
+  min-height:130px;
+  display:grid;
+  gap:7px;
+  text-align:right;
+  padding:14px;
+  padding-top:42px;
+  border:0;
+  background:transparent;
+  color:#fff;
+}
+.delete-custom-food{
+  position:absolute;
+  top:9px;
+  right:9px;
+  width:30px;
+  height:30px;
+  border-radius:9px;
+  border:1px solid rgba(248,113,113,.25);
+  background:rgba(248,113,113,.08);
+  color:#fca5a5;
+  display:grid;
+  place-items:center;
+  z-index:3;
+}
+.add-custom-food-button{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:13px;
+  margin-top:12px;
+  border-radius:14px;
+  border:1px dashed rgba(33,212,167,.45);
+  background:rgba(33,212,167,.06);
+  color:#dffdf6;
+  font-weight:800;
+}
+
+@media(max-width:520px){
+  .season-banner{align-items:flex-start}
+  .season-badge{width:50px;height:50px;border-radius:15px}
+}
+
+
+/* ===== V13 gym toggle + adhkar ===== */
+.wake-gym-note{margin:.5rem 0 0;padding:12px 14px;border-radius:14px;border:1px solid var(--soft-border);background:rgba(124,92,255,.07);color:var(--muted);line-height:1.7}
+.day-summary-bar .gym-day-toggle{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:12px;border:1px solid var(--soft-border);background:rgba(255,255,255,.025);color:var(--muted)}
+.day-summary-bar .gym-day-toggle.active{border-color:rgba(33,212,167,.55);background:rgba(33,212,167,.10);color:#e8fff8}
+.gym-day-check{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;border:1px solid rgba(148,163,184,.34);background:rgba(148,163,184,.06)}
+.gym-day-toggle.active .gym-day-check{border-color:var(--accent2);background:var(--accent2);color:#07131a}
+.adhkar-modal{max-width:640px;max-height:86vh;overflow:auto}
+.adhkar-list{display:grid;gap:10px}
+.dhikr-card{padding:14px;border-radius:16px;border:1px solid var(--soft-border);background:var(--surface-1)}
+.dhikr-card strong{display:block;color:var(--accent2);margin-bottom:7px}
+.dhikr-card p{margin:0;font-size:1.06rem;line-height:2;color:#fff}
+.dhikr-card span,.dhikr-card small{display:block;margin-top:7px;color:var(--muted);line-height:1.6}
+.sunnah-wake-note{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;border:1px solid rgba(33,212,167,.28);background:rgba(33,212,167,.07)}
+.sunnah-wake-note svg{color:var(--accent2);flex:0 0 auto}
+.sunnah-wake-note p{margin:0;line-height:1.7}
+/* ===== V15 real-time intelligence ===== */
+.live-device-clock{
+  display:flex;align-items:center;gap:8px;width:max-content;max-width:100%;margin-bottom:10px;
+  padding:8px 11px;border-radius:12px;border:1px solid rgba(34,211,238,.22);
+  background:rgba(34,211,238,.06);color:var(--muted)
+}
+.live-device-clock strong{color:#fff}
+.actual-food-modal{max-width:680px;max-height:88vh;overflow:auto}
+.actual-food-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:48vh;overflow:auto}
+.actual-food-grid button{display:grid;gap:5px;text-align:right;padding:12px;border-radius:13px;border:1px solid var(--soft-border);background:var(--surface-1);color:#fff}
+.actual-food-grid button span{color:var(--muted);font-size:.84rem}
+.actual-meals-list{display:grid;gap:8px}
+.actual-meal-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border-radius:13px;border:1px solid var(--soft-border);background:rgba(255,255,255,.025)}
+.actual-meal-row div{display:grid;gap:3px}
+.actual-meal-row span,.actual-meal-row small{color:var(--muted)}
+@media(max-width:520px){.actual-food-grid{grid-template-columns:1fr}}
+
+
+/* ===== V16 prayer times ===== */
+.prayer-times-card{border-color:rgba(34,211,238,.22)!important}
+.prayer-times-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.prayer-location{display:flex;align-items:center;gap:6px;margin:.35rem 0 0}
+.prayer-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:12px}
+.prayer-item{display:grid;gap:4px;text-align:center;padding:12px 8px;border-radius:14px;border:1px solid var(--soft-border);background:rgba(255,255,255,.025)}
+.prayer-item span{color:var(--muted);font-size:.86rem}
+.prayer-item strong{font-size:1.05rem}
+.prayer-item small{color:var(--accent2);font-size:.72rem}
+.prayer-item.next{border-color:rgba(33,212,167,.55);background:rgba(33,212,167,.08)}
+.prayer-empty,.prayer-error{display:grid;gap:10px;margin-top:10px}
+.prayer-empty p,.prayer-error p,.prayer-note{color:var(--muted);line-height:1.7}
+.prayer-note{margin:.8rem 0 0;font-size:.82rem}
+@media(max-width:720px){.prayer-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ===== V17 Intelligent Day Manager ===== */
+.actual-event-master{
+  width:100%;display:flex;align-items:center;gap:12px;text-align:right;padding:15px 16px;
+  border:1px solid rgba(33,212,167,.52);border-radius:18px;
+  background:linear-gradient(135deg,rgba(33,212,167,.14),rgba(124,92,255,.12));color:#fff
+}
+.actual-event-master strong,.manager-now-button strong{display:block;font-size:1.03rem}
+.actual-event-master small,.manager-now-button small{display:block;color:var(--muted);margin-top:4px}
+.day-state-strip{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.day-state-strip button{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:14px;border:1px solid var(--line);background:#0d1322;color:#fff;text-align:right}
+.day-state-strip button svg{color:var(--accent2)}
+.day-state-strip button.warning{border-color:rgba(255,184,77,.45);background:rgba(255,184,77,.08)}
+.day-state-strip span{font-size:.88rem}.day-state-strip strong{color:#fff}
+.actual-event-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.actual-event-grid button{display:flex;align-items:flex-start;gap:10px;padding:13px;border:1px solid var(--line);border-radius:16px;background:#0c1322;color:#fff;text-align:right;min-height:88px}
+.actual-event-grid button:hover{border-color:var(--accent2)}
+.actual-event-grid svg{color:var(--accent2);flex:0 0 auto}
+.actual-event-grid span{display:grid;gap:4px}.actual-event-grid strong{font-size:.95rem}.actual-event-grid small{color:var(--muted);line-height:1.45}
+.energy-choice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.energy-choice-grid button{display:grid;place-items:center;gap:8px;padding:18px 8px;border:1px solid var(--line);border-radius:17px;background:#0c1322;color:#fff}
+.energy-choice-grid button span{font-size:2rem}
+.illness-choice-list{display:grid;gap:9px}
+.illness-choice-list button{padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:#0c1322;color:#fff;text-align:right}
+.food-source-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.food-source-tabs button{padding:11px;border-radius:13px;border:1px solid var(--line);background:#0c1322;color:#fff}
+.food-source-tabs button.active{border-color:var(--accent2);background:rgba(33,212,167,.12)}
+.frequent-meals{display:grid;gap:9px;padding:12px;border-radius:15px;background:#0b111d;border:1px solid var(--line)}
+.frequent-meals>div{display:flex;gap:7px;flex-wrap:wrap}
+.frequent-meals button{padding:8px 10px;border-radius:999px;border:1px solid var(--line);background:#151d2f;color:#fff}
+.actual-food-grid button.selected{border-color:var(--accent2);box-shadow:0 0 0 1px rgba(33,212,167,.18) inset;background:rgba(33,212,167,.08)}
+.meal-analysis{display:flex;align-items:flex-start;gap:11px;padding:14px;border-radius:16px;border:1px solid rgba(255,184,77,.32);background:rgba(255,184,77,.07)}
+.meal-analysis.enough{border-color:rgba(33,212,167,.38);background:rgba(33,212,167,.08)}
+.meal-analysis svg{color:var(--accent2);flex:0 0 auto}.meal-analysis p{margin:5px 0 0;color:var(--muted);line-height:1.65}
+.friday-mode-card,.ramadan-mode-card{display:flex!important;justify-content:space-between;align-items:flex-start;gap:16px}
+.friday-mode-card{border-color:rgba(33,212,167,.35)!important;background:linear-gradient(145deg,rgba(33,212,167,.09),rgba(16,22,37,.96))!important}
+.ramadan-mode-card{border-color:rgba(124,92,255,.42)!important;background:linear-gradient(145deg,rgba(124,92,255,.13),rgba(16,22,37,.96))!important}
+.friday-mode-card h2,.ramadan-mode-card h2{margin:.3rem 0 .45rem}.friday-mode-card p,.ramadan-mode-card p{margin:0;color:var(--muted);line-height:1.7}
+.friday-mode-card>svg,.ramadan-mode-card>svg{color:var(--accent2);flex:0 0 auto}
+.ramadan-settings-card{display:flex;gap:12px;align-items:flex-start;padding:13px;border-radius:15px;background:#0b111d;border:1px solid var(--line);margin-bottom:12px}
+.ramadan-settings-card svg{color:var(--accent);flex:0 0 auto}.ramadan-settings-card h3{margin:0 0 5px}.ramadan-settings-card p{margin:0;color:var(--muted);line-height:1.6}
+.timeline-icon.prayer,.task-icon.prayer{background:rgba(33,212,167,.12);color:var(--accent2)}
+.next-action-card:has(.task-icon.prayer){border-color:rgba(33,212,167,.45);background:linear-gradient(145deg,rgba(33,212,167,.09),rgba(14,20,34,.98))}
+.actual-feedback-card p{margin:.25rem 0 0}
+.safety-note{display:flex;align-items:flex-start;gap:8px}
+@media(max-width:640px){
+  .actual-event-grid{grid-template-columns:1fr 1fr}.actual-event-grid button{min-height:96px;padding:11px}
+  .day-state-strip{grid-template-columns:1fr}.energy-choice-grid{grid-template-columns:repeat(3,1fr)}
+}
+
+/* ===== V18 Smart Engine + Optional AI Coach ===== */
+.smart-engine-status{
+  display:grid;gap:10px;padding:13px 14px;border-radius:16px;
+  border:1px solid rgba(34,211,238,.3);background:rgba(34,211,238,.055)
+}
+.smart-engine-title{display:flex;align-items:center;gap:9px}
+.smart-engine-title>svg{color:#67e8f9;flex:0 0 auto}
+.smart-engine-title span{display:grid;gap:2px}.smart-engine-title small{color:var(--muted)}
+.smart-engine-chips{display:flex;gap:7px;flex-wrap:wrap}
+.smart-engine-chips span{padding:6px 9px;border-radius:999px;border:1px solid var(--line);background:#0b1220;color:#dbeafe;font-size:.78rem}
+.ask-coach-button{
+  width:100%;display:flex;align-items:center;gap:12px;text-align:right;padding:15px 16px;
+  border:1px solid rgba(124,92,255,.5);border-radius:18px;
+  background:linear-gradient(135deg,rgba(124,92,255,.16),rgba(34,211,238,.08));color:#fff
+}
+.ask-coach-button strong{display:block;font-size:1.03rem}.ask-coach-button small{display:block;color:var(--muted);margin-top:4px}
+.proactive-coach-card{
+  position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:13px;align-items:flex-start;
+  padding:17px;border-radius:20px;border:1px solid rgba(33,212,167,.42);
+  background:linear-gradient(145deg,rgba(33,212,167,.11),rgba(14,20,34,.98));
+  box-shadow:0 14px 40px rgba(0,0,0,.18)
+}
+.proactive-coach-card.priority-3{border-color:rgba(255,184,77,.52);background:linear-gradient(145deg,rgba(255,184,77,.11),rgba(14,20,34,.98))}
+.proactive-coach-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:rgba(33,212,167,.13);color:var(--accent2)}
+.priority-3 .proactive-coach-icon{background:rgba(255,184,77,.13);color:#ffc76b}
+.proactive-coach-copy h2{margin:.25rem 0 .35rem;font-size:1.08rem}.proactive-coach-copy p{margin:0;color:#edf6ff;line-height:1.75}
+.proactive-coach-copy small{display:block;margin-top:7px;color:var(--muted)}
+.proactive-dismiss{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;border:1px solid var(--line);background:#0c1322;color:var(--muted)}
+.smart-coach-modal{width:min(720px,94vw);max-height:90vh;overflow:auto}
+.smart-coach-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.smart-coach-modal-head h2{margin:.25rem 0 0}.smart-coach-modal-head>button{width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line);border-radius:11px;background:#0c1322;color:#fff}
+.coach-example-chips{display:flex;gap:7px;flex-wrap:wrap}
+.coach-example-chips button{padding:8px 10px;border-radius:999px;border:1px solid rgba(124,92,255,.35);background:rgba(124,92,255,.08);color:#eee9ff;font-size:.8rem}
+.coach-conversation{display:grid;gap:9px;min-height:180px;max-height:43vh;overflow:auto;padding:11px;border-radius:16px;border:1px solid var(--line);background:#080d17}
+.coach-message{max-width:88%;padding:11px 13px;border-radius:15px;border:1px solid var(--line);background:#11192a}
+.coach-message.user{justify-self:end;background:rgba(124,92,255,.14);border-color:rgba(124,92,255,.32)}
+.coach-message.assistant{justify-self:start;background:rgba(33,212,167,.08);border-color:rgba(33,212,167,.25)}
+.coach-message-meta{display:flex;align-items:center;gap:7px}.coach-message-meta span{padding:2px 6px;border-radius:999px;background:#162039;color:var(--accent2);font-size:.68rem}
+.coach-message p{margin:5px 0 0;line-height:1.75;white-space:pre-wrap}.coach-message.loading{opacity:.72}
+.coach-fallback-note{padding:9px 11px;border-radius:12px;border:1px solid rgba(255,184,77,.3);background:rgba(255,184,77,.07);color:#ffd99a;font-size:.82rem}
+.coach-input-row{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:end}
+.coach-input-row textarea{width:100%;resize:vertical;min-height:54px;max-height:130px}
+.coach-input-row>button{width:48px;height:48px;display:grid;place-items:center;border:0;border-radius:14px;background:var(--accent2);color:#07131a}
+.coach-input-row>button:disabled{opacity:.45}
+.smart-coach-settings-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;padding:13px;border-radius:15px;border:1px solid rgba(34,211,238,.25);background:rgba(34,211,238,.055)}
+.smart-coach-settings-head>svg{color:#67e8f9;flex:0 0 auto}.smart-coach-settings-head h3{margin:0 0 5px}.smart-coach-settings-head p{margin:0;color:var(--muted);line-height:1.65}
+.toggle-row span{display:inline-flex;align-items:center;gap:7px}
+.ai-optional-box{display:grid;gap:12px;margin-top:14px;padding:14px;border-radius:16px;border:1px solid rgba(124,92,255,.3);background:rgba(124,92,255,.055)}
+.ai-optional-title{display:flex;align-items:flex-start;gap:10px}.ai-optional-title>svg{color:#b8a9ff;flex:0 0 auto}.ai-optional-title div{display:grid;gap:4px}.ai-optional-title small{color:var(--muted);line-height:1.55}
+.ai-config-grid{display:grid;gap:10px}
+@media(max-width:600px){
+  .proactive-coach-card{grid-template-columns:auto 1fr}.proactive-dismiss{position:absolute;top:10px;left:10px}
+  .coach-message{max-width:96%}.smart-engine-chips span{font-size:.72rem}
+}
+
+/* ===== V19 UX audit and polish ===== */
+textarea{font:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{
+  outline:3px solid rgba(90,116,255,.55);outline-offset:3px
+}
+button:disabled{cursor:not-allowed;opacity:.5}
+
+/* Put the decision-making content before secondary details without changing the data flow. */
+.home-page>.page-header{order:0}
+.home-page>.live-device-clock{order:1}
+.home-page>.day-summary-bar{order:2}
+.home-page>.proactive-coach-card{order:3}
+.home-page>.next-action-card{order:4}
+.home-page>.attention-card{order:5}
+.home-page>.command-center{order:6}
+.home-page>.compact-gym-time{order:7}
+.home-page>.friday-mode-card,.home-page>.ramadan-mode-card{order:8}
+.home-page>.prayer-times-card{order:9}
+.home-page>.sleep-control-card,.home-page>.success-card:not(.actual-feedback-card){order:10}
+.home-page>.supermarket-card,.home-page>.gym-live-card,.home-page>.habit-context-card{order:11}
+.home-page>.day-details-panel{order:20}
+.home-page>.actual-event-fab{order:30}
+
+.prayer-times-card{gap:12px!important}
+.prayer-compact-summary{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
+  padding:13px 14px;border:1px solid rgba(33,212,167,.3);border-radius:17px;
+  background:linear-gradient(135deg,rgba(33,212,167,.09),rgba(90,116,255,.06))
+}
+.prayer-compact-icon{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:rgba(33,212,167,.13);color:var(--accent2)}
+.prayer-compact-copy{display:grid;gap:3px}.prayer-compact-copy small{color:var(--muted)}
+.prayer-compact-copy strong{font-size:1.08rem}.prayer-compact-copy em{font-size:.75rem;color:#89bca8;font-style:normal}
+.prayer-details-toggle{border:1px solid var(--line);background:#111a2a;color:#fff;border-radius:11px;padding:9px 11px;font-weight:800;white-space:nowrap}
+
+.day-details-panel{border:1px solid var(--line);border-radius:20px;background:rgba(13,20,33,.72);overflow:hidden}
+.day-details-panel>summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 18px;color:#fff;transition:background .18s ease
+}
+.day-details-panel>summary::-webkit-details-marker{display:none}
+.day-details-panel>summary:hover{background:rgba(90,116,255,.07)}
+.day-details-panel>summary>span{display:flex;align-items:center;gap:9px}.day-details-panel>summary svg{color:var(--accent2)}
+.day-details-panel>summary small{color:var(--muted);text-align:left}
+.day-details-panel[open]>summary{border-bottom:1px solid var(--line);background:rgba(90,116,255,.055)}
+.day-details-content{display:grid;gap:14px;padding:14px}
+.day-details-content>.card{box-shadow:none}
+
+.actual-feedback-card{
+  position:fixed;z-index:90;right:18px;bottom:108px;width:min(420px,calc(100vw - 28px));
+  animation:v19-toast-in .25s ease both;box-shadow:0 18px 48px rgba(0,0,0,.42)!important
+}
+@keyframes v19-toast-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+
+.actual-event-fab{display:none}
+.actual-event-grid:disabled{opacity:.58;pointer-events:none}
+.actual-event-grid{border:0;padding:0;margin:0;min-width:0}
+
+.modal-backdrop{backdrop-filter:blur(5px)}
+.modal{overscroll-behavior:contain}
+
+@media(max-width:700px){
+  .page-header h1{font-size:1.75rem}.page-header p{font-size:.9rem;line-height:1.6;margin-bottom:0}
+  .day-summary-bar{padding:10px 12px;gap:8px}.day-summary-bar>div{font-size:.82rem}
+  .next-action-card{padding:16px}.next-action-main h2{font-size:1.3rem}
+  .command-center{gap:12px}.smart-engine-status{padding:11px}.smart-engine-chips{max-height:66px;overflow:hidden}
+  .prayer-times-head .btn{padding:9px 11px}.prayer-compact-summary{grid-template-columns:auto 1fr;padding:12px}
+  .prayer-details-toggle{grid-column:1/-1;width:100%}
+  .day-details-panel>summary{align-items:flex-start;flex-direction:column}.day-details-panel>summary small{text-align:right}
+  .actual-event-fab{
+    position:fixed;z-index:29;right:14px;bottom:91px;display:flex;align-items:center;gap:8px;
+    border:1px solid rgba(33,212,167,.5);border-radius:999px;padding:11px 15px;
+    background:linear-gradient(135deg,var(--accent),#1aaecf);color:#04100c;font-weight:900;
+    box-shadow:0 12px 32px rgba(0,0,0,.42)
+  }
+  .actual-feedback-card{right:14px;bottom:145px}
+  .modal-backdrop{align-items:end;padding:0}
+  .modal{width:100%;max-height:91vh;border-radius:24px 24px 0 0;padding:18px;padding-bottom:max(20px,env(safe-area-inset-bottom))}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+
+/* Shared feedback and resilient states added during the V19 audit. */
+.field-error,.form-error,.food-error-card{
+  margin:0;padding:11px 13px;border:1px solid rgba(255,101,120,.38);border-radius:13px;
+  background:rgba(255,101,120,.08);color:#ffc4cc;line-height:1.65
+}
+.food-error-card{display:block!important}
+.inline-success,.food-status-card p{
+  margin:0
+}
+.inline-success{
+  display:flex;align-items:center;gap:8px;padding:11px 13px;border:1px solid rgba(38,194,129,.35);
+  border-radius:13px;background:rgba(38,194,129,.08);color:#bdf4d9
+}
+.onboarding-actions{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap}
+.onboarding-actions .btn{flex:1;min-width:150px}
+.settings-save-bar{
+  position:sticky;top:10px;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px 13px;border:1px solid rgba(38,194,129,.38);border-radius:16px;
+  background:rgba(12,18,29,.94);backdrop-filter:blur(16px);box-shadow:0 10px 28px rgba(0,0,0,.28)
+}
+.settings-save-bar>div{display:grid;gap:3px}.settings-save-bar small{color:var(--muted);line-height:1.45}
+.settings-save-bar .btn{flex:0 0 auto}
+.fatal-error{
+  min-height:100vh;display:grid;place-content:center;justify-items:center;gap:14px;text-align:center;
+  padding:28px;background:radial-gradient(circle at top,#17233a,var(--bg) 65%);color:#fff
+}
+.fatal-error svg{color:var(--danger)}.fatal-error h1{margin:0}.fatal-error p{max-width:560px;margin:0;color:var(--muted);line-height:1.8}
+.fatal-error button{display:flex;align-items:center;gap:8px;border:0;border-radius:14px;padding:12px 18px;background:var(--accent);color:#04100c;font-weight:900}
+@media(max-width:600px){
+  .settings-save-bar{top:6px}.settings-save-bar small{display:none}.settings-save-bar .btn{padding:10px 13px}
+  .onboarding-actions{flex-direction:column}.onboarding-actions .btn{width:100%}
+}
+.app-loading{min-height:100vh;display:grid;place-content:center;justify-items:center;gap:10px;color:#fff}
+.app-loading span{width:64px;height:64px;display:grid;place-items:center;border-radius:20px;background:linear-gradient(135deg,var(--accent),var(--accent2));font-weight:900;font-size:1.25rem}
+.app-loading p{margin:0;color:var(--muted)}

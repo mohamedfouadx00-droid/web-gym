@@ -5,8 +5,10 @@ import {
   creatineRepo,
   dailyTaskRepo,
   dayEventRepo,
+  mealLogRepo,
   mealPlanRepo,
   preferencesRepo,
+  waterRepo,
 } from '../data/repositories'
 import {
   dateKey,
@@ -14,8 +16,12 @@ import {
   minutesToTimeInput,
   normalizePreferences,
 } from '../domain/dailyCoach'
-import type { DailyTask, DayEventType } from '../domain/models'
+import type { DailyTask, DayEventType, EnergyLevel, FoodCatalogItem, IllnessType } from '../domain/models'
 import { regenerateDailyPlan } from './planService'
+
+function defaultGymDayForDate(date = new Date()) {
+  return date.getDay() !== 5
+}
 
 function nowMinutes() {
   const now = new Date()
@@ -46,12 +52,13 @@ function isPreGymTask(task: DailyTask) {
   )
 }
 
-export async function startDayNow(userId: string, goingGym = true) {
+export async function startDayNow(userId: string, goingGym?: boolean) {
   const day = dateKey()
   const now = new Date()
   const wakeTime = minutesToTimeInput(nowMinutes())
 
-  const [lastSleep, lastFailedSleep, lastWake] = await Promise.all([
+  const [existingCheckIn, lastSleep, lastFailedSleep, lastWake] = await Promise.all([
+    checkInRepo.get(userId, day),
     dayEventRepo.latestByType(userId, 'sleep_started'),
     dayEventRepo.latestByType(userId, 'sleep_failed'),
     dayEventRepo.latestByType(userId, 'woke_now'),
@@ -70,12 +77,18 @@ export async function startDayNow(userId: string, goingGym = true) {
       ? hoursBetween(lastSleep.createdAt, now)
       : undefined
 
+  const resolvedGoingGym =
+    existingCheckIn?.goingGym ??
+    goingGym ??
+    defaultGymDayForDate(now)
+
   await checkInRepo.save({
     userId,
     dateKey: day,
     wakeTime,
     sleepHours,
-    goingGym,
+    goingGym: resolvedGoingGym,
+    customGymTime: existingCheckIn?.customGymTime,
   })
 
   await addEvent(
@@ -131,6 +144,20 @@ export async function startSleepNow(userId: string) {
 
 export async function failedToSleep(userId: string) {
   await addEvent(userId, 'sleep_failed')
+}
+
+export async function setGymDay(userId: string, goingGym: boolean) {
+  const day = dateKey()
+  const checkIn = await checkInRepo.get(userId, day)
+  if (!checkIn) return
+
+  await checkInRepo.save({
+    ...checkIn,
+    goingGym,
+    customGymTime: goingGym ? checkIn.customGymTime : undefined,
+  })
+
+  await regenerateDailyPlan(userId, day)
 }
 
 export async function setCustomGymTime(userId: string, time: string) {
@@ -277,7 +304,7 @@ export async function rescueMessyDay(userId: string) {
   let cursor = now + 10
 
   const updated = tasks.map((task) => {
-    if (task.completed) return task
+    if (task.completed || task.type === 'prayer') return task
 
     const next = {
       ...task,
@@ -358,10 +385,152 @@ export async function replaceUnavailableMealIngredient(
 export async function snoozeTaskAndReplan(task: DailyTask, minutes = 30) {
   if (!task.id) return
   await dailyTaskRepo.snooze(task.id, minutes)
+  await regenerateDailyPlan(task.userId, task.dateKey)
 }
 
 export function actionExplanation(task: DailyTask | undefined) {
   if (!task) return 'لا توجد خطوة معلقة الآن.'
+  if (task.type === 'prayer') return `الصلاة هي الأولوية الآن، وبعدها التطبيق هيعرض الخطوة التالية ويمنع تعارضها مع ${task.title}.`
 
   return `الخطوة الأنسب الآن هي «${task.title}» في حوالي ${formatTimeAr(task.timeMinutes)} لأن الخطة مربوطة بحالتك الحالية والجيم ومكانك والأكل المتاح.`
+}
+export async function logActualMealInstead(
+  userId: string,
+  task: DailyTask | undefined,
+  food: Pick<FoodCatalogItem, 'id' | 'nameAr' | 'calories' | 'protein'>,
+  source: 'home' | 'restaurant' | 'quick' = 'home',
+) {
+  const day = dateKey()
+  const now = nowMinutes()
+  let sourceTask = task?.type === 'meal' ? task : undefined
+
+  if (!sourceTask) {
+    const tasks = await dailyTaskRepo.list(userId, day)
+    sourceTask = tasks
+      .filter((item) => item.type === 'meal' && !item.completed)
+      .sort((a, b) => Math.abs(a.timeMinutes - now) - Math.abs(b.timeMinutes - now))[0]
+  }
+
+  const alreadyLogged = sourceTask?.id
+    ? await mealLogRepo.existsForTask(userId, sourceTask.id)
+    : false
+
+  if (!alreadyLogged) {
+    await mealLogRepo.add({
+      userId,
+      dateKey: day,
+      foodId: food.id,
+      foodNameAr: food.nameAr,
+      mealLabel: sourceTask?.title ?? (source === 'restaurant' ? 'وجبة من مطعم' : 'أكلت الآن'),
+      eatenAt: new Date().toISOString(),
+      calories: food.calories,
+      protein: food.protein,
+      sourceTaskId: sourceTask?.id,
+      source,
+    })
+  }
+
+  if (sourceTask?.id) {
+    await dailyTaskRepo.update(sourceTask.id, {
+      completed: true,
+      response: 'done',
+      details: `أكلت بالفعل: ${food.nameAr}`,
+    })
+  }
+
+  if (source === 'restaurant') await addEvent(userId, 'restaurant_meal', food.nameAr)
+
+  const tasks = await dailyTaskRepo.list(userId, day)
+  const pending = tasks
+    .filter((item) => !item.completed && item.id)
+    .sort((a, b) => a.timeMinutes - b.timeMinutes)
+  let nextMealTime = now + 180
+  let nextGeneralTime = now + 30
+
+  for (const item of pending) {
+    let timeMinutes = item.timeMinutes
+
+    if (item.type === 'meal') {
+      timeMinutes = Math.max(timeMinutes, nextMealTime)
+      nextMealTime = timeMinutes + 180
+      nextGeneralTime = Math.max(nextGeneralTime, timeMinutes + 45)
+    } else if (item.type === 'gym') {
+      timeMinutes = Math.max(timeMinutes, now + 120)
+      nextGeneralTime = Math.max(nextGeneralTime, timeMinutes + 45)
+    } else if (item.type !== 'prayer') {
+      timeMinutes = Math.max(timeMinutes, nextGeneralTime)
+      nextGeneralTime = timeMinutes + 35
+    }
+
+    if (timeMinutes !== item.timeMinutes) {
+      await dailyTaskRepo.update(item.id!, { timeMinutes })
+    }
+  }
+}
+
+export async function logActualWaterNow(userId: string, amountMl: number) {
+  const day = dateKey()
+  const tasks = await dailyTaskRepo.list(userId, day)
+  const now = nowMinutes()
+  const task = tasks
+    .filter((item) => item.type === 'water' && !item.completed && item.id)
+    .sort((a, b) => Math.abs(a.timeMinutes - now) - Math.abs(b.timeMinutes - now))[0]
+
+  await waterRepo.add({
+    userId,
+    amountMl,
+    date: new Date().toISOString(),
+    sourceTaskId: task?.id,
+  })
+
+  if (task?.id) {
+    await dailyTaskRepo.update(task.id, {
+      completed: true,
+      response: 'done',
+      details: `شربت ${amountMl} مل مياه بالفعل.`,
+    })
+  }
+}
+
+export async function logActualCreatineNow(userId: string) {
+  const day = dateKey()
+  const rawPreferences = await preferencesRepo.get(userId)
+  const preferences = normalizePreferences(rawPreferences, userId)
+
+  await creatineRepo.markTaken({
+    userId,
+    dateKey: day,
+    doseG: preferences.creatineDoseG,
+    takenAt: new Date().toISOString(),
+  })
+
+  const tasks = await dailyTaskRepo.list(userId, day)
+  const task = tasks.find((item) => item.type === 'creatine' && !item.completed)
+  if (task?.id) await dailyTaskRepo.setCompleted(task.id, true)
+}
+
+export async function setEnergyLevel(userId: string, level: EnergyLevel) {
+  const eventType: DayEventType = level === 'low'
+    ? 'energy_low'
+    : level === 'high'
+      ? 'energy_high'
+      : 'energy_normal'
+  await addEvent(userId, eventType)
+  await regenerateDailyPlan(userId, dateKey())
+}
+
+export async function setIllnessMode(userId: string, illness: IllnessType) {
+  await addEvent(userId, 'illness_set', illness)
+  await regenerateDailyPlan(userId, dateKey())
+}
+
+export async function clearIllnessMode(userId: string) {
+  await addEvent(userId, 'illness_cleared')
+  await regenerateDailyPlan(userId, dateKey())
+}
+
+export async function completePrayerTask(userId: string, task: DailyTask) {
+  if (!task.id || task.type !== 'prayer') return
+  await dailyTaskRepo.setCompleted(task.id, true)
+  await addEvent(userId, 'prayer_completed', task.contextKey ?? task.title)
 }

@@ -29,6 +29,8 @@ export default function OnboardingPage() {
   const [gymPeriod, setGymPeriod] = useState<GymPeriod>('auto')
   const [creatineEnabled, setCreatineEnabled] = useState(true)
   const [creatineDose, setCreatineDose] = useState('5')
+  const [finishing, setFinishing] = useState(false)
+  const [formError, setFormError] = useState('')
 
   const profileDraft = useMemo<UserProfile>(() => ({
     userId: 'preview',
@@ -55,28 +57,58 @@ export default function OnboardingPage() {
 
   const recommendation = useMemo(() => recommendGoal(profileDraft), [profileDraft])
 
+  const currentYear = new Date().getFullYear()
+  const numericBirthYear = Number(birthYear)
+  const numericHeight = Number(height)
+  const numericWeight = Number(weight)
+  const numericWaist = waist ? Number(waist) : undefined
+  const profileValid = Boolean(
+    name.trim().length >= 2
+    && numericBirthYear >= currentYear - 80
+    && numericBirthYear <= currentYear - 16
+    && numericHeight >= 120
+    && numericHeight <= 230
+    && numericWeight >= 35
+    && numericWeight <= 300
+    && (numericWaist === undefined || (numericWaist >= 40 && numericWaist <= 220))
+  )
+  const creatineDoseValid = !creatineEnabled || (Number(creatineDose) >= 1 && Number(creatineDose) <= 10)
+
   async function finish() {
-    const userId = crypto.randomUUID()
-    const finalProfile: UserProfile = { ...profileDraft, userId }
-    const finalRecommendation = recommendGoal(finalProfile)
+    if (finishing || !profileValid || !creatineDoseValid) {
+      setFormError('راجع البيانات والجرعة قبل المتابعة.')
+      return
+    }
+    setFinishing(true)
+    setFormError('')
+    try {
+      const userId = crypto.randomUUID()
+      const finalProfile: UserProfile = { ...profileDraft, userId }
+      const finalRecommendation = recommendGoal(finalProfile)
 
-    await db.users.add({ id: userId, createdAt: new Date().toISOString() })
-    await profileRepo.save(finalProfile)
-    await goalRepo.save({
-      userId,
-      primary: finalRecommendation.goal,
-      targetWeightKg: Number(weight),
-    })
-    await preferencesRepo.save({
-      userId,
-      gymPeriod,
-      creatineEnabled,
-      creatineDoseG: Number(creatineDose),
-    })
+      await db.transaction('rw', db.users, db.profiles, db.goals, db.preferences, async () => {
+        await db.users.add({ id: userId, createdAt: new Date().toISOString() })
+        await profileRepo.save(finalProfile)
+        await goalRepo.save({
+          userId,
+          primary: finalRecommendation.goal,
+          targetWeightKg: Number(weight),
+        })
+        await preferencesRepo.save({
+          userId,
+          gymPeriod,
+          creatineEnabled,
+          creatineDoseG: Number(creatineDose),
+        })
+      })
 
-    appSettings.activeUserId = userId
-    appSettings.onboardingCompleted = true
-    navigate('/', { replace: true })
+      appSettings.activeUserId = userId
+      appSettings.onboardingCompleted = true
+      navigate('/', { replace: true })
+    } catch {
+      setFormError('مقدرناش نحفظ الإعدادات على الجهاز. جرّب مرة تانية، وراجع إن مساحة المتصفح متاحة.')
+      setFinishing(false)
+    }
   }
 
   return (
@@ -199,12 +231,11 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <Button
-              disabled={!name.trim() || !weight || !height || !birthYear}
-              onClick={() => setStep(2)}
-            >
-              حلل بياناتي
-            </Button>
+            {!profileValid && <p className="field-error">اكتب اسمًا صحيحًا، وعمرًا من 16 إلى 80 سنة، وطولًا ووزنًا واقعيين.</p>}
+            <div className="onboarding-actions">
+              <Button variant="secondary" onClick={() => setStep(0)}>رجوع</Button>
+              <Button disabled={!profileValid} onClick={() => setStep(2)}>حلل بياناتي</Button>
+            </div>
           </Card>
         )}
 
@@ -226,7 +257,10 @@ export default function OnboardingPage() {
             </div>
 
             <p className="safety-note">دي توصية تنظيمية مبدئية وليست تشخيصًا طبيًا.</p>
-            <Button onClick={() => setStep(3)}>تمام، رتّب يومي على الهدف ده</Button>
+            <div className="onboarding-actions">
+              <Button variant="secondary" onClick={() => setStep(1)}>تعديل بياناتي</Button>
+              <Button onClick={() => setStep(3)}>تمام، رتّب يومي على الهدف ده</Button>
+            </div>
           </Card>
         )}
 
@@ -272,7 +306,12 @@ export default function OnboardingPage() {
               </label>
             )}
 
-            <Button onClick={finish}>ابدأ تنظيم يومي</Button>
+            {!creatineDoseValid && <p className="field-error">جرعة الكرياتين المسجلة لازم تكون بين 1 و10 جم.</p>}
+            {formError && <p className="field-error">{formError}</p>}
+            <div className="onboarding-actions">
+              <Button variant="secondary" disabled={finishing} onClick={() => setStep(2)}>رجوع</Button>
+              <Button disabled={finishing || !creatineDoseValid} onClick={finish}>{finishing ? 'بجهز التطبيق...' : 'ابدأ تنظيم يومي'}</Button>
+            </div>
           </Card>
         )}
       </div>

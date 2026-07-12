@@ -3,9 +3,16 @@ export type ActivityLevel = 'low' | 'moderate' | 'high'
 export type TrainingExperience = 'new' | 'some' | 'experienced'
 export type WeightTrend = 'losing' | 'stable' | 'gaining'
 export type GymPeriod = 'auto' | 'afternoon' | 'evening'
-export type DailyTaskType = 'water' | 'meal' | 'gym' | 'creatine' | 'checkin'
-export type FoodCategory = 'protein' | 'carb' | 'dairy' | 'fruit' | 'fat' | 'vegetable'
+export type DailyTaskType = 'water' | 'meal' | 'gym' | 'creatine' | 'checkin' | 'prayer'
+export type FoodCategory = 'protein' | 'carb' | 'dairy' | 'fruit' | 'fat' | 'vegetable' | 'meal' | 'treat'
+export type SeasonType = 'summer' | 'winter' | 'all'
+export type FoodKind = 'component' | 'complete_meal' | 'treat'
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'pre_gym' | 'post_gym'
 export type TaskResponse = 'done' | 'snoozed' | 'unavailable'
+export type CoachRole = 'user' | 'assistant'
+export type CoachSource = 'local' | 'ai'
+export type EnergyLevel = 'low' | 'normal' | 'high'
+export type IllnessType = 'cold_fever' | 'headache' | 'stomach' | 'fatigue' | 'injury'
 export type DayEventType =
   | 'woke_now'
   | 'sleep_started'
@@ -17,6 +24,13 @@ export type DayEventType =
   | 'outside_home'
   | 'inside_home'
   | 'masturbation_logged'
+  | 'energy_low'
+  | 'energy_normal'
+  | 'energy_high'
+  | 'illness_set'
+  | 'illness_cleared'
+  | 'prayer_completed'
+  | 'restaurant_meal'
 
 export interface User {
   id: string
@@ -50,6 +64,9 @@ export interface UserPreferences {
   gymPeriod: GymPeriod
   creatineEnabled: boolean
   creatineDoseG: number
+  ramadanMode?: boolean
+  proactiveCoachEnabled?: boolean
+  browserNotificationsEnabled?: boolean
 }
 
 export interface FoodCatalogItem {
@@ -61,6 +78,14 @@ export interface FoodCatalogItem {
   protein: number
   carbs: number
   fats: number
+  season?: SeasonType
+  kind?: FoodKind
+  mealSlots?: MealSlot[]
+}
+
+export interface CustomFood extends FoodCatalogItem {
+  userId: string
+  createdAt: string
 }
 
 export interface AvailableFood {
@@ -92,6 +117,7 @@ export interface DailyTask {
   response?: TaskResponse
   waterAmountMl?: number
   mealKey?: string
+  contextKey?: string
 }
 
 export interface MealPlanItem {
@@ -105,6 +131,20 @@ export interface MealPlanItem {
   ingredients: string[]
   calories: number
   protein: number
+}
+
+export interface MealLog {
+  id?: number
+  userId: string
+  dateKey: string
+  foodId: string
+  foodNameAr: string
+  mealLabel: string
+  eatenAt: string
+  calories: number
+  protein: number
+  sourceTaskId?: number
+  source?: 'home' | 'restaurant' | 'quick'
 }
 
 export interface WaterLog {
@@ -137,4 +177,15 @@ export interface DayEvent {
   type: DayEventType
   createdAt: string
   note?: string
+}
+
+
+export interface CoachMessage {
+  id?: number
+  userId: string
+  dateKey: string
+  role: CoachRole
+  text: string
+  source: CoachSource
+  createdAt: string
 }

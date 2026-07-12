@@ -2,15 +2,18 @@ import { db } from './db'
 import type {
   AvailableFood,
   CreatineLog,
+  CustomFood,
   DailyCheckIn,
   DailyTask,
   DayEvent,
   Goal,
+  MealLog,
   MealPlanItem,
   UserPreferences,
   UserProfile,
   WaterLog,
   WeightLog,
+  CoachMessage,
 } from '../domain/models'
 
 export const profileRepo = {
@@ -213,4 +216,56 @@ export const dayEventRepo = {
   },
 
   add: (value: DayEvent) => db.dayEvents.add(value),
+}
+
+
+export const customFoodRepo = {
+  list: (userId: string) =>
+    db.customFoods.where('userId').equals(userId).sortBy('createdAt'),
+
+  add: (value: CustomFood) => db.customFoods.put(value),
+
+  remove: (id: string) => db.customFoods.delete(id),
+}
+
+
+export const mealLogRepo = {
+  listAll: (userId: string) => db.mealLogs.where('userId').equals(userId).sortBy('eatenAt'),
+
+  list: (userId: string, dateKey: string) =>
+    db.mealLogs
+      .where('userId')
+      .equals(userId)
+      .filter((row) => row.dateKey === dateKey)
+      .sortBy('eatenAt'),
+
+  add: (value: MealLog) => db.mealLogs.add(value),
+
+  existsForTask: async (userId: string, sourceTaskId: number) =>
+    Boolean(
+      await db.mealLogs
+        .where('userId')
+        .equals(userId)
+        .filter((row) => row.sourceTaskId === sourceTaskId)
+        .first()
+    ),
+}
+
+
+export const coachMessageRepo = {
+  list: (userId: string, dateKey: string) =>
+    db.coachMessages
+      .where('userId')
+      .equals(userId)
+      .filter((row) => row.dateKey === dateKey)
+      .sortBy('createdAt'),
+
+  add: (value: CoachMessage) => db.coachMessages.add(value),
+
+  clearDay: async (userId: string, dateKey: string) =>
+    db.coachMessages
+      .where('userId')
+      .equals(userId)
+      .filter((row) => row.dateKey === dateKey)
+      .delete(),
 }

@@ -5,9 +5,11 @@ import type {
   Goal,
   GoalType,
   MealPlanItem,
+  MealSlot,
   UserPreferences,
   UserProfile,
 } from './models'
+import { getEgyptSeason, isFoodInSeason } from './season'
 
 export interface DailyTargets {
   calories: number
@@ -150,13 +152,96 @@ function chooseGymTime(wake: number, period: UserPreferences['gymPeriod']): numb
   return clamp(wake + 9 * 60, 16 * 60, 21 * 60)
 }
 
-function chooseFood(
+function mealSlotForTitle(title: string): MealSlot {
+  if (title.includes('فطار')) return 'breakfast'
+  if (title.includes('بعد الجيم')) return 'post_gym'
+  if (title.includes('قبل الجيم')) return 'pre_gym'
+  if (title.includes('غداء')) return 'lunch'
+  if (title.includes('عشاء')) return 'dinner'
+  if (title.includes('سناك')) return 'snack'
+  return 'lunch'
+}
+
+function defaultMealSlots(food: FoodCatalogItem): MealSlot[] {
+  if (food.kind === 'treat' || food.category === 'treat') return ['snack']
+
+  if (food.kind === 'complete_meal' || food.category === 'meal') {
+    const name = food.nameAr
+    const slots: MealSlot[] = ['lunch']
+
+    if (
+      name.includes('فول') ||
+      name.includes('طعمية') ||
+      name.includes('بيض') ||
+      name.includes('جبنة')
+    ) {
+      slots.push('breakfast')
+    }
+
+    if (
+      name.includes('تونة') ||
+      name.includes('جبنة') ||
+      name.includes('بيض') ||
+      name.includes('شاورما') ||
+      name.includes('راب') ||
+      name.includes('برجر') ||
+      name.includes('بيتزا')
+    ) {
+      slots.push('dinner')
+    }
+
+    return slots
+  }
+
+  switch (food.category) {
+    case 'protein':
+      if (['eggs', 'boiled-eggs', 'omelette', 'foul', 'falafel'].includes(food.id)) {
+        return ['breakfast', 'dinner']
+      }
+      if (['tuna-water', 'tuna-oil'].includes(food.id)) {
+        return ['breakfast', 'lunch', 'dinner', 'post_gym']
+      }
+      return ['lunch', 'dinner', 'post_gym']
+
+    case 'carb':
+      if (['oats', 'bread-baladi', 'fino-bread', 'toast-white', 'toast-brown'].includes(food.id)) {
+        return ['breakfast', 'dinner', 'pre_gym', 'post_gym']
+      }
+      return ['lunch', 'dinner', 'post_gym']
+
+    case 'dairy':
+      return ['breakfast', 'dinner', 'snack', 'pre_gym', 'post_gym']
+
+    case 'fruit':
+      return ['breakfast', 'snack', 'pre_gym']
+
+    case 'vegetable':
+      return ['lunch', 'dinner']
+
+    case 'fat':
+      return ['breakfast', 'snack', 'dinner']
+
+    default:
+      return ['lunch']
+  }
+}
+
+function foodFitsSlot(food: FoodCatalogItem, slot: MealSlot): boolean {
+  const slots = food.mealSlots?.length ? food.mealSlots : defaultMealSlots(food)
+  return slots.includes(slot)
+}
+
+function chooseFoodForSlot(
   foods: FoodCatalogItem[],
   category: FoodCatalogItem['category'],
   usedIds: Set<string>,
+  slot: MealSlot,
 ): FoodCatalogItem | undefined {
-  return foods.find((food) => food.category === category && !usedIds.has(food.id))
-    ?? foods.find((food) => food.category === category)
+  return foods.find((food) =>
+    food.category === category &&
+    !usedIds.has(food.id) &&
+    foodFitsSlot(food, slot)
+  )
 }
 
 function buildMeal(
@@ -164,42 +249,96 @@ function buildMeal(
   mealKey: string,
   timeMinutes: number,
   availableFoods: FoodCatalogItem[],
+  usedAcrossDay: Set<string>,
 ): MealPlanItem | null {
   if (!availableFoods.length) return null
 
+  const season = getEgyptSeason()
+  const slot = mealSlotForTitle(title)
+
+  const seasonFiltered = availableFoods.filter((food) =>
+    (food.category !== 'fruit' || isFoodInSeason(food, season)) &&
+    foodFitsSlot(food, slot)
+  )
+  const slotFiltered = availableFoods.filter((food) => foodFitsSlot(food, slot))
+  const rawCandidates = seasonFiltered.length ? seasonFiltered : slotFiltered
+  const freshCandidates = rawCandidates.filter((food) => !usedAcrossDay.has(food.id))
+  const candidates = freshCandidates.length ? freshCandidates : rawCandidates
+
+  if (!candidates.length) return null
+
+  if (slot === 'snack' || slot === 'pre_gym') {
+    const snack =
+      candidates.find((food) => food.category === 'fruit') ??
+      candidates.find((food) => food.category === 'dairy') ??
+      candidates.find((food) => food.kind === 'treat' || food.category === 'treat') ??
+      candidates.find((food) => food.category === 'carb')
+
+    if (!snack) return null
+
+    return {
+      userId: '',
+      dateKey: '',
+      mealKey,
+      timeMinutes,
+      title,
+      foodIds: [snack.id],
+      ingredients: [`${snack.nameAr} — ${snack.servingLabel}`],
+      calories: snack.calories,
+      protein: Math.round(snack.protein),
+    }
+  }
+
+  const completeMeal = candidates.find((food) =>
+    (food.kind === 'complete_meal' || food.category === 'meal') &&
+    foodFitsSlot(food, slot)
+  )
+
+  if (completeMeal) {
+    const side = candidates.find((food) =>
+      food.id !== completeMeal.id &&
+      (slot === 'breakfast'
+        ? food.category === 'fruit'
+        : food.category === 'vegetable')
+    )
+    const selected = side ? [completeMeal, side] : [completeMeal]
+
+    return {
+      userId: '',
+      dateKey: '',
+      mealKey,
+      timeMinutes,
+      title,
+      foodIds: selected.map((food) => food.id),
+      ingredients: selected.map((food) => `${food.nameAr} — ${food.servingLabel}`),
+      calories: selected.reduce((sum, food) => sum + food.calories, 0),
+      protein: Math.round(selected.reduce((sum, food) => sum + food.protein, 0)),
+    }
+  }
+
   const usedIds = new Set<string>()
   const selected: FoodCatalogItem[] = []
-  const isBreakfast = title.includes('فطار')
-  const isSnack = title.includes('سناك')
 
-  const protein = chooseFood(availableFoods, 'protein', usedIds)
-    ?? chooseFood(availableFoods, 'dairy', usedIds)
+  const protein =
+    chooseFoodForSlot(candidates, 'protein', usedIds, slot) ??
+    chooseFoodForSlot(candidates, 'dairy', usedIds, slot)
+
   if (protein) {
     selected.push(protein)
     usedIds.add(protein.id)
   }
 
-  if (!isSnack) {
-    const carb = chooseFood(availableFoods, 'carb', usedIds)
-    if (carb) {
-      selected.push(carb)
-      usedIds.add(carb.id)
-    }
+  const carb = chooseFoodForSlot(candidates, 'carb', usedIds, slot)
+  if (carb) {
+    selected.push(carb)
+    usedIds.add(carb.id)
   }
 
-  const produce = chooseFood(
-    availableFoods,
-    isBreakfast || isSnack ? 'fruit' : 'vegetable',
-    usedIds,
-  )
+  const produceCategory = slot === 'breakfast' ? 'fruit' : 'vegetable'
+  const produce = chooseFoodForSlot(candidates, produceCategory, usedIds, slot)
   if (produce) {
     selected.push(produce)
     usedIds.add(produce.id)
-  }
-
-  if (selected.length < 2) {
-    const dairy = chooseFood(availableFoods, 'dairy', usedIds)
-    if (dairy) selected.push(dairy)
   }
 
   if (!selected.length) return null
@@ -242,13 +381,19 @@ export function buildDailyPlan(params: {
     ? ['الفطار', 'وجبة رئيسية قبل الجيم', 'سناك خفيف قبل الجيم', 'وجبة بعد الجيم']
     : ['الفطار', 'الغداء', 'سناك', 'العشاء']
 
+  const usedAcrossDay = new Set<string>()
   const meals = mealTimes
-    .map((time, index) => buildMeal(
-      mealTitles[index],
-      `meal-${index + 1}`,
-      time,
-      availableFoods,
-    ))
+    .map((time, index) => {
+      const meal = buildMeal(
+        mealTitles[index],
+        `meal-${index + 1}`,
+        time,
+        availableFoods,
+        usedAcrossDay,
+      )
+      meal?.foodIds.forEach((foodId) => usedAcrossDay.add(foodId))
+      return meal
+    })
     .filter((meal): meal is MealPlanItem => meal !== null)
     .map((meal) => ({ ...meal, userId, dateKey: date }))
 
@@ -342,5 +487,8 @@ export function normalizePreferences(raw: UserPreferences | undefined, userId: s
         : 'auto',
     creatineEnabled: source?.creatineEnabled ?? true,
     creatineDoseG: Number(source?.creatineDoseG) || 5,
+    ramadanMode: source?.ramadanMode ?? false,
+    proactiveCoachEnabled: source?.proactiveCoachEnabled ?? true,
+    browserNotificationsEnabled: source?.browserNotificationsEnabled ?? false,
   }
 }

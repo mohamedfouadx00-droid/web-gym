@@ -2,16 +2,19 @@ import Dexie, { type Table } from 'dexie'
 import type {
   AvailableFood,
   CreatineLog,
+  CustomFood,
   DailyCheckIn,
   DailyTask,
   DayEvent,
   Goal,
+  MealLog,
   MealPlanItem,
   User,
   UserPreferences,
   UserProfile,
   WaterLog,
   WeightLog,
+  CoachMessage,
 } from '../domain/models'
 
 class GymDatabase extends Dexie {
@@ -25,13 +28,16 @@ class GymDatabase extends Dexie {
   dailyCheckIns!: Table<DailyCheckIn, number>
   dailyTasks!: Table<DailyTask, number>
   mealPlans!: Table<MealPlanItem, number>
+  mealLogs!: Table<MealLog, number>
   creatineLogs!: Table<CreatineLog, number>
   dayEvents!: Table<DayEvent, number>
+  customFoods!: Table<CustomFood, string>
+  coachMessages!: Table<CoachMessage, number>
 
   constructor() {
     super('gym-arabic-men')
 
-    this.version(11).stores({
+    this.version(13).stores({
       users: 'id,createdAt',
       profiles: '++id,&userId',
       goals: '++id,&userId',
@@ -42,8 +48,11 @@ class GymDatabase extends Dexie {
       dailyCheckIns: '++id,[userId+dateKey],userId,dateKey',
       dailyTasks: '++id,userId,dateKey,timeMinutes,type,completed,response,mealKey',
       mealPlans: '++id,[userId+dateKey+mealKey],userId,dateKey,timeMinutes,mealKey',
+      mealLogs: '++id,userId,dateKey,eatenAt,foodId,sourceTaskId',
       creatineLogs: '++id,[userId+dateKey],userId,dateKey',
       dayEvents: '++id,userId,dateKey,type,createdAt',
+      customFoods: 'id,userId,category,createdAt',
+      coachMessages: '++id,userId,dateKey,createdAt,role,source',
     }).upgrade(async (tx) => {
       const profiles = await tx.table('profiles').toArray()
       for (const profile of profiles) {

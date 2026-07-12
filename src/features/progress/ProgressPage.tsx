@@ -1,4 +1,4 @@
-import { useMemo, useState, type FocusEvent } from 'react'
+import { useEffect, useMemo, useState, type FocusEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { CheckCircle2, Scale, Sparkles, TrendingUp } from 'lucide-react'
 import { appSettings, db } from '../../data/db'
@@ -22,7 +22,7 @@ function lastDateKeys(days: number) {
   return Array.from({ length: days }, (_, index) => {
     const date = new Date()
     date.setDate(date.getDate() - index)
-    return date.toISOString().slice(0, 10)
+    return dateKey(date)
   })
 }
 
@@ -38,7 +38,6 @@ export default function ProgressPage() {
     () => db.dailyTasks.where('userId').equals(userId).filter((task) => last7.includes(task.dateKey)).toArray(),
     [userId],
   ) ?? []
-  const waterLogs = useLiveQuery(() => db.waterLogs.where('userId').equals(userId).toArray(), [userId]) ?? []
   const creatineLogs = useLiveQuery(
     () => db.creatineLogs.where('userId').equals(userId).filter((log) => last7.includes(log.dateKey)).toArray(),
     [userId],
@@ -48,23 +47,40 @@ export default function ProgressPage() {
     [userId],
   ) ?? []
 
-  const [weight, setWeight] = useState(weights[0]?.valueKg.toString() ?? '75')
+  const [weight, setWeight] = useState('75')
+  const [savingWeight, setSavingWeight] = useState(false)
+  const [weightMessage, setWeightMessage] = useState('')
+  const [weightError, setWeightError] = useState('')
   const goal = normalizeGoal(rawGoal, userId)
+
+  useEffect(() => {
+    if (weights[0]) setWeight(String(weights[0].valueKg))
+  }, [weights[0]?.id])
+
+  useEffect(() => {
+    if (!weightMessage) return
+    const timeout = window.setTimeout(() => setWeightMessage(''), 2600)
+    return () => window.clearTimeout(timeout)
+  }, [weightMessage])
 
   const todayTasks = allTasks.filter((task) => task.dateKey === today)
   const dueTodayTasks = todayTasks.filter((task) => task.timeMinutes <= currentMinutes() + 15)
   const todayCompleted = dueTodayTasks.filter((task) => task.completed).length
-  const todayScore = dueTodayTasks.length ? Math.round((todayCompleted / dueTodayTasks.length) * 100) : 100
+  const todayScore = dueTodayTasks.length ? Math.round((todayCompleted / dueTodayTasks.length) * 100) : null
 
   const dailyScores = useMemo(() => last7.map((day) => {
-    const tasks = allTasks.filter((task) => task.dateKey === day)
+    const tasks = allTasks.filter((task) => {
+      if (task.dateKey !== day) return false
+      if (day !== today) return true
+      return task.timeMinutes <= currentMinutes() + 15
+    })
     if (!tasks.length) return null
     const taskScore = tasks.filter((task) => task.completed).length / tasks.length
     const gymFinished = events.some((event) => event.dateKey === day && event.type === 'gym_finished')
     const creatineTaken = creatineLogs.some((log) => log.dateKey === day)
     const bonus = (gymFinished ? 0.05 : 0) + (creatineTaken ? 0.05 : 0)
     return Math.min(100, Math.round((taskScore + bonus) * 100))
-  }).filter((value): value is number => value !== null), [allTasks, events, creatineLogs, last7])
+  }).filter((value): value is number => value !== null), [allTasks, events, creatineLogs, last7, today])
 
   const weeklyScore = dailyScores.length ? Math.round(average(dailyScores)) : null
   const averageWeight = weights.length ? average(weights.slice(0, 7).map((item) => item.valueKg)) : null
@@ -72,8 +88,11 @@ export default function ProgressPage() {
   const weeklySummary = useMemo(() => {
     if (!dailyScores.length) return ['استخدم التطبيق عدة أيام وسجّل الخطوات، وبعدها هتظهر مراجعة أسبوعية تلقائية.']
 
-    const completedRatio = allTasks.length
-      ? allTasks.filter((task) => task.completed).length / allTasks.length
+    const scoreEligibleTasks = allTasks.filter((task) =>
+      task.dateKey !== today || task.timeMinutes <= currentMinutes() + 15,
+    )
+    const completedRatio = scoreEligibleTasks.length
+      ? scoreEligibleTasks.filter((task) => task.completed).length / scoreEligibleTasks.length
       : 0
     const gymDays = new Set(events.filter((event) => event.type === 'gym_finished').map((event) => event.dateKey)).size
     const creatineDays = new Set(creatineLogs.map((log) => log.dateKey)).size
@@ -100,7 +119,7 @@ export default function ProgressPage() {
     }
 
     const newest = average(weights.slice(0, 3).map((item) => item.valueKg))
-    const older = average(weights.slice(-3).map((item) => item.valueKg))
+    const older = average(weights.slice(3, 6).map((item) => item.valueKg))
     const change = newest - older
 
     if (goal.primary === 'lean_gain') {
@@ -120,25 +139,39 @@ export default function ProgressPage() {
 
   async function saveWeight() {
     const value = Number(weight)
-    if (!value) return
+    if (savingWeight) return
+    if (!Number.isFinite(value) || value < 35 || value > 300) {
+      setWeightError('اكتب وزنًا واقعيًا بين 35 و300 كجم.')
+      return
+    }
 
-    await weightRepo.add({ userId, valueKg: value, date: new Date().toISOString() })
+    setSavingWeight(true)
+    setWeightError('')
+    try {
+      await weightRepo.add({ userId, valueKg: value, date: new Date().toISOString() })
 
-    if (profile) {
-      const updatedProfile = { ...profile, currentWeightKg: value }
-      await profileRepo.save(updatedProfile)
-      const currentGoal = normalizeGoal(await goalRepo.get(userId), userId)
-      const recommendation = recommendGoal(updatedProfile)
-      await goalRepo.save({ ...currentGoal, primary: recommendation.goal })
-      await regenerateDailyPlan(userId, today)
+      if (profile) {
+        const updatedProfile = { ...profile, currentWeightKg: value }
+        await profileRepo.save(updatedProfile)
+        const currentGoal = normalizeGoal(await goalRepo.get(userId), userId)
+        const recommendation = recommendGoal(updatedProfile)
+        await goalRepo.save({ ...currentGoal, primary: recommendation.goal })
+        await regenerateDailyPlan(userId, today)
+      }
+      setWeightMessage('تم حفظ الوزن وتحديث الهدف والخطة.')
+    } catch {
+      setWeightError('مقدرناش نحفظ الوزن دلوقتي. جرّب تاني.')
+    } finally {
+      setSavingWeight(false)
     }
   }
+
 
   return (
     <Page title="تقدمي" subtitle="التقييم بيطلع تلقائيًا من اللي سجلته وعملته، من غير زر «هخلص يومي»">
       <div className="stats-grid">
         <Stat label="هدفك الحالي" value={goalLabels[goal.primary]} />
-        <Stat label="التزامك حتى الآن" value={`${todayScore}%`} hint={`${todayCompleted} من ${dueTodayTasks.length} خطوات مستحقة`} />
+        <Stat label="التزامك حتى الآن" value={todayScore == null ? '—' : `${todayScore}%`} hint={dueTodayTasks.length ? `${todayCompleted} من ${dueTodayTasks.length} خطوات مستحقة` : 'لا توجد خطوات مستحقة الآن'} />
         <Stat label="متوسط آخر الأوزان" value={averageWeight ? `${averageWeight.toFixed(1)} كجم` : '—'} />
         <Stat label="مؤشر الأسبوع" value={weeklyScore == null ? '—' : `${weeklyScore}%`} />
       </div>
@@ -165,12 +198,14 @@ export default function ProgressPage() {
       <Card title="تنفيذ خطوات اليوم">
         <div className="adherence-row">
           <CheckCircle2 size={28} />
-          <div><strong>{todayScore}%</strong><span>محسوب من الخطوات اللي ميعادها جه فقط</span></div>
+          <div><strong>{todayScore == null ? '—' : `${todayScore}%`}</strong><span>{dueTodayTasks.length ? 'محسوب من الخطوات اللي ميعادها جه فقط' : 'لا توجد خطوات مستحقة الآن'}</span></div>
         </div>
         <ProgressBar value={todayCompleted} max={dueTodayTasks.length || 1} />
       </Card>
 
       <Card title="سجل وزنك">
+        {weightMessage && <p className="inline-success"><CheckCircle2 size={18} />{weightMessage}</p>}
+        {weightError && <p className="field-error">{weightError}</p>}
         <div className="weight-input-row">
           <Scale size={24} />
           <input
@@ -180,7 +215,7 @@ export default function ProgressPage() {
             onChange={(event) => setWeight(event.target.value.replace(/[^0-9.]/g, '').slice(0, 5))}
           />
           <span>كجم</span>
-          <Button onClick={saveWeight}>حفظ</Button>
+          <Button disabled={savingWeight} onClick={saveWeight}>{savingWeight ? 'بحفظ...' : 'حفظ'}</Button>
         </div>
 
         {weights.length ? (
