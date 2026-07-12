@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src"],
+  "exclude": [
+    "src/data/seeds.ts",
+    "src/domain/smartCoach.ts",
+    "src/components/ExerciseVisual.tsx",
+    "src/features/exercises/**",
+    "src/features/nutrition/**",
+    "src/features/recovery/**",
+    "src/features/workout/**"
+  ]
+}
