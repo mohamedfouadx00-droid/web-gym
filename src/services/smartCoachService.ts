@@ -1,0 +1,271 @@
+import { goalLabels } from '../domain/dailyCoach'
+import type { DayEvent, FoodCatalogItem, MealLog, UserPreferences, UserProfile } from '../domain/models'
+import type { SmartDaySnapshot } from './smartEngineService'
+import { locationLabel, seasonLabel } from './smartEngineService'
+
+export interface CoachAiConfig {
+  version: 2
+  enabled: boolean
+  endpoint: string
+  model: string
+}
+
+export interface CoachQuestionContext {
+  snapshot: SmartDaySnapshot
+  availableFoods: FoodCatalogItem[]
+  frequentFoods: FoodCatalogItem[]
+  preferences: UserPreferences
+  profile?: UserProfile
+  mealsToday?: MealLog[]
+  eventsToday?: DayEvent[]
+  plannedMeals?: Array<{ title: string; timeMinutes: number; calories: number; protein: number }>
+  nextTaskTitles: string[]
+}
+
+export interface CoachReply {
+  text: string
+  source: 'local' | 'ai'
+  fallbackReason?: string
+}
+
+const defaultConfig: CoachAiConfig = {
+  version: 2,
+  enabled: true,
+  endpoint: '/api/coach',
+  model: 'cloudflare-workers-ai',
+}
+
+export function getCoachAiConfig(): CoachAiConfig {
+  if (typeof localStorage === 'undefined') return defaultConfig
+  try {
+    const raw = localStorage.getItem('gym.coachAiConfig')
+    if (!raw) return defaultConfig
+    const parsed = JSON.parse(raw) as Partial<CoachAiConfig> & { version?: number }
+    if (parsed.version !== 2) return defaultConfig
+    return { ...defaultConfig, ...parsed, version: 2 }
+  } catch {
+    return defaultConfig
+  }
+}
+
+export function saveCoachAiConfig(config: Omit<CoachAiConfig, 'version'> | CoachAiConfig) {
+  localStorage.setItem('gym.coachAiConfig', JSON.stringify({ ...config, version: 2 }))
+}
+
+function normalizeArabic(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[ًٌٍَُِّْـ]/g, '')
+}
+
+function containsAny(text: string, words: string[]) {
+  return words.some((word) => text.includes(normalizeArabic(word)))
+}
+
+function availableNames(context: CoachQuestionContext, limit = 5) {
+  return context.availableFoods.slice(0, limit).map((food) => food.nameAr)
+}
+
+function foodMatchesQuestion(question: string, context: CoachQuestionContext) {
+  const normalized = normalizeArabic(question)
+  return context.availableFoods.filter((food) => normalized.includes(normalizeArabic(food.nameAr))).slice(0, 6)
+}
+
+function budgetFromQuestion(question: string) {
+  const match = question.match(/(\d{2,5})\s*(?:جنيه|جنية|ج)/)
+  return match ? Number(match[1]) : undefined
+}
+
+function localGymAnswer(context: CoachQuestionContext) {
+  const { snapshot } = context
+  if (snapshot.illness) {
+    return snapshot.fastingNow
+      ? 'بما إنك مفعّل وضع «أنا تعبان» وإنت صايم دلوقتي، متضغطش على نفسك بالجيم. ركّز على الراحة، وبعد المغرب اهتم بالمياه والأكل. لو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.'
+      : 'بما إنك مفعّل وضع «أنا تعبان»، متضغطش على نفسك بالجيم. ركّز على الراحة والمياه، ولو الأعراض شديدة أو مستمرة اطلب تقييمًا طبيًا.'
+  }
+  if (snapshot.fastingNow) {
+    return 'إنت في وقت الصيام دلوقتي. الأفضل تأجل الجيم لما بعد الإفطار والمياه بوقت مناسب، وخلي الشدة حسب نومك وطاقتك.'
+  }
+  if (snapshot.sleepHours !== undefined && snapshot.sleepHours <= 4.5) {
+    return `إنت نمت ${snapshot.sleepHours} ساعة تقريبًا. لو الإرهاق واضح، الراحة النهارده أفضل. لو حاسس إنك قادر، خلي التمرين خفيف وقصير ومتتمرنش بالعافية.`
+  }
+  if (snapshot.energy === 'low') {
+    return 'طاقتك المسجلة قليلة. كل واشرب وخد راحة قصيرة، وبعدها قيّم نفسك مرة تانية. لو التعب حقيقي أو مستمر، شيل الجيم النهارده.'
+  }
+  if (snapshot.nextPrayer && snapshot.nextPrayer.minutesAway >= 0 && snapshot.nextPrayer.minutesAway <= 30) {
+    return `باقي حوالي ${snapshot.nextPrayer.minutesAway} دقيقة على ${snapshot.nextPrayer.title}. صلّي الأول، وبعدها تحرك للجيم براحة.`
+  }
+  return snapshot.goingGym
+    ? 'حسب حالتك الحالية تقدر تتمرن، لكن التزم بالخطة وخلي قرار الشدة حسب نومك وطاقتك الفعلية.'
+    : 'النهارده مش متسجل يوم جيم. تقدر تخليه راحة، أو تفعّل الجيم يدويًا لو وقتك وطاقتك مناسبين.'
+}
+
+export function answerCoachLocally(question: string, context: CoachQuestionContext): string {
+  const text = normalizeArabic(question.trim())
+  const { snapshot, preferences } = context
+  const matchedFoods = foodMatchesQuestion(question, context)
+  const budget = budgetFromQuestion(question)
+
+  if (!text) return 'اكتبلي اللي حصل معاك أو سؤالك، وأنا هربطه ببيانات يومك الحالية.'
+
+  if (containsAny(text, ['مش قادر اتنفس', 'الم شديد', 'اغماء', 'الم صدر', 'نزيف'])) {
+    return 'الأعراض دي محتاجة تصرف طبي سريع، مش نصيحة تدريب أو أكل داخل التطبيق. اطلب مساعدة طبية عاجلة أو تواصل مع الطوارئ في بلدك.'
+  }
+
+  if (containsAny(text, ['جدول تمارين', 'تمارين ايه', 'العب ايه', 'مجموعات', 'تكرارات', 'حركات'])) {
+    return 'التطبيق لا يقدّم تمارين أو حركات أو جداول أو مجموعات وتكرارات. أقدر أنظم لك ميعاد الجيم، قرار الذهاب، الشدة العامة، الأكل قبل وبعد الجيم، المياه والكرياتين.'
+  }
+
+  if (containsAny(text, ['اتمرن', 'الجيم', 'اريح', 'تمرين'])) {
+    return localGymAnswer(context)
+  }
+
+  if (containsAny(text, ['تعبان', 'مرهق', 'مجهد', 'طاقتي قليله', 'صحيت تعبان'])) {
+    const sleep = snapshot.sleepHours !== undefined ? ` ونمت ${snapshot.sleepHours} ساعة تقريبًا` : ''
+    return snapshot.fastingNow
+      ? `واضح إن طاقتك اتغيرت${sleep}. خُد راحة وقلل المجهود دلوقتي، وبعد المغرب ابدأ بالمياه والأكل بهدوء. لو التعب قوي أو مستمر، ألغِ الجيم وخد تقييمًا طبيًا عند الحاجة.`
+      : `واضح إن طاقتك اتغيرت${sleep}. اشرب مياه، وكل وجبة بسيطة لو بقالك فترة من غير أكل، وخد راحة قصيرة. بعدها حدّث زر الطاقة. لو التعب قوي أو مستمر، ألغِ الجيم وخد تقييمًا طبيًا عند الحاجة.`
+  }
+
+  if (containsAny(text, ['نسيت الكرياتين', 'الكرياتين الصبح', 'اخد الكرياتين', 'كرياتين'])) {
+    return snapshot.creatineTaken
+      ? 'إنت مسجل إنك أخدت الكرياتين النهارده بالفعل.'
+      : snapshot.fastingNow
+        ? `مش مشكلة إنك نسيته. خُد جرعتك المعتادة ${preferences.creatineDoseG} جم بعد الإفطار أو بعد الجيم مع مياه؛ الانتظام أهم من ساعة محددة.`
+        : `مش مشكلة إنك نسيته الصبح. خُد جرعتك المعتادة ${preferences.creatineDoseG} جم في وقت مناسب النهارده مع مياه؛ الانتظام أهم من ساعة محددة.`
+  }
+
+  if (budget !== undefined || containsAny(text, ['معايا فلوس', 'اشتري اكل', 'اجيب اكل', 'ميزانيه'])) {
+    const common = availableNames(context, 3)
+    const priceNote = budget ? `بميزانية ${budget} جنيه` : 'بميزانية محدودة'
+    return `${priceNote}، ركّز على أساسيات مشبعة ورخيصة نسبيًا: بيض، فول، عيش، زبادي أو تونة حسب الأسعار عندك. ${common.length ? `وبما إن الموجود عندك حاليًا: ${common.join('، ')}، اشترِ المكمل الناقص بدل تكرار نفس النوع.` : 'اختار مصدر بروتين + عيش أو أرز + خضار أو فاكهة موسمية.'} الأسعار تختلف حسب المكان، فاعتبرها أولويات مش تسعيرة ثابتة.`
+  }
+
+  if (matchedFoods.length || containsAny(text, ['عندي', 'اعمل ايه', 'اكل ايه'])) {
+    const names = matchedFoods.length ? matchedFoods.map((food) => food.nameAr) : availableNames(context)
+    if (!names.length) return 'حدد الأكل المتاح عندك من صفحة الأكل، وبعدها أقدر أرتب لك وجبة من الموجود فعلًا.'
+    return `من الموجود عندك تقدر تعمل وجبة من: ${names.join(' + ')}. خلي فيها مصدر بروتين واضح، وأضف عيش أو نشويات حسب الجوع وهدفك. ${snapshot.fastingNow ? 'حضّرها للإفطار أو السحور حسب الوقت، وبعد ما تأكل' : 'بعد ما تأكل'} سجّل الوجبة من «إيه اللي حصل فعلًا؟» علشان باقي اليوم يتظبط.`
+  }
+
+  if (containsAny(text, ['مياه', 'عطشان', 'شربت'])) {
+    return snapshot.fastingNow
+      ? `إنت في وقت الصيام دلوقتي. بعد المغرب وزّع هدف المياه ${snapshot.waterTargetMl} مل تدريجيًا لحد الفجر، ومتتعوضش كمية كبيرة مرة واحدة.`
+      : `إنت مسجل حوالي ${snapshot.waterTodayMl} مل من هدف ${snapshot.waterTargetMl} مل. زوّد المياه تدريجيًا، ومتتعوضش كمية كبيرة مرة واحدة، خصوصًا لو الجيم قريب.`
+  }
+
+  if (containsAny(text, ['مكلتش', 'جعان', 'اكلت امتى'])) {
+    if (snapshot.fastingNow) {
+      return 'إنت في وقت الصيام دلوقتي، فمش هاقترح عليك أكل أو مياه قبل المغرب. قلل المجهود وجهّز إفطارًا متوازنًا، ولو عندك أعراض غير معتادة أو شديدة اهتم بسلامتك واطلب مساعدة طبية عند الحاجة.'
+    }
+    return snapshot.hoursSinceMeal >= 5
+      ? `بقالك حوالي ${snapshot.hoursSinceMeal.toFixed(1)} ساعة من غير أكل. كل دلوقتي وجبة مناسبة، خصوصًا لو عندك جيم قريب.`
+      : `آخر وجبة مش بعيدة جدًا؛ بقالك حوالي ${snapshot.hoursSinceMeal.toFixed(1)} ساعة. اختار حسب جوعك الحقيقي والخطوة التالية في يومك.`
+  }
+
+  return `أنا شايف إنك ${locationLabel(snapshot.location)}، والوقت في ${seasonLabel(snapshot.season)}، وهدفك «${goalLabels[snapshot.goal]}». ${snapshot.fastingNow ? 'إنت في وقت الصيام الآن، فالتوجيهات هتراعي عدم الأكل أو الشرب قبل المغرب. ' : ''}${snapshot.sleepHours !== undefined ? `نومك ${snapshot.sleepHours} ساعة تقريبًا، ` : ''}شربت ${snapshot.waterTodayMl} مل مياه، وبقالك ${snapshot.hoursSinceMeal.toFixed(1)} ساعة من آخر أكل. أقرب خطواتك: ${context.nextTaskTitles.join('، ') || 'مفيش خطوة عاجلة'}. اسألني عن الجيم أو الأكل أو المياه أو الكرياتين وأنا هجاوب حسب الحالة دي.`
+}
+
+function buildSystemPrompt(context: CoachQuestionContext) {
+  const snapshot = context.snapshot
+  const profile = context.profile
+  const age = profile ? new Date().getFullYear() - profile.birthYear : undefined
+  const meals = context.mealsToday ?? []
+  const mealCalories = meals.reduce((sum, meal) => sum + meal.calories, 0)
+  const mealProtein = meals.reduce((sum, meal) => sum + meal.protein, 0)
+  const eventNames: Record<string, string> = {
+    woke_now: 'صحيت',
+    sleep_started: 'بدأ النوم',
+    sleep_failed: 'لم يستطع النوم',
+    gym_departed: 'تحرك للجيم',
+    gym_started: 'بدأ الجيم',
+    gym_finished: 'أنهى الجيم',
+    day_messy: 'اليوم اتلخبط',
+    outside_home: 'خارج البيت',
+    inside_home: 'رجع البيت',
+    energy_low: 'الطاقة قليلة',
+    energy_normal: 'الطاقة عادية',
+    energy_high: 'الطاقة عالية',
+    illness_set: 'سجل تعبًا أو إصابة',
+    illness_cleared: 'أنهى وضع التعب',
+    restaurant_meal: 'أكل من مطعم',
+  }
+
+  return [
+    'أنت مدرب صحي وتغذية يومي داخل تطبيق عربي مصري. أنت ذكاء اصطناعي حقيقي متصل ببيانات التطبيق، لكنك لست طبيبًا ولا تشخّص مرضًا أو تصف دواءً.',
+    'ابدأ بالقرار الأهم الآن، ثم اشرح السبب من بيانات المستخدم، ثم أعط خطوة واحدة أو اثنتين قابلة للتنفيذ.',
+    'ممنوع تقديم أسماء تمارين أو جداول تمارين أو حركات أو مجموعات أو تكرارات. يمكنك فقط تنظيم توقيت الجيم، قرار الذهاب، الشدة العامة، الراحة، الأكل، المياه، الكرياتين والتعافي.',
+    'لا تخمّن بيانات غير موجودة. عند نقص الكمية أو طريقة الطهي قل إن التقدير تقريبي واسأل سؤالًا واحدًا فقط عند الضرورة.',
+    `الوقت الحالي: ${snapshot.now.toISOString()}.`,
+    `المكان: ${locationLabel(snapshot.location)}. الموسم: ${seasonLabel(snapshot.season)}. الجمعة: ${snapshot.isFriday ? 'نعم' : 'لا'}.`,
+    profile ? `الملف: الاسم ${profile.name}، العمر التقريبي ${age}، الطول ${profile.heightCm} سم، الوزن ${profile.currentWeightKg} كجم، محيط الخصر ${profile.waistCm ?? 'غير مسجل'} سم، النشاط ${profile.activityLevel}، خبرة الجيم ${profile.trainingExperience}، التدخين ${profile.smoker ? 'نعم' : 'لا'}.` : 'بيانات الملف الشخصي غير مكتملة.',
+    `النوم: ${snapshot.sleepHours ?? 'غير مسجل'} ساعة. الطاقة: ${snapshot.energy}. تعب/إصابة: ${snapshot.illness ?? 'لا'}.`,
+    `الهدف: ${goalLabels[snapshot.goal]}. المياه: ${snapshot.waterTodayMl}/${snapshot.waterTargetMl} مل. الصيام الآن: ${snapshot.fastingNow ? 'نعم' : 'لا'}.`,
+    `من آخر أكل: ${snapshot.hoursSinceMeal.toFixed(1)} ساعة. الجيم اليوم: ${snapshot.goingGym ? 'نعم' : 'لا'}.`,
+    `الكرياتين: ${snapshot.creatineTaken ? 'تم' : 'لم يتم'}. الجرعة المسجلة: ${context.preferences.creatineDoseG} جم.`,
+    `ما تم أكله اليوم: ${meals.map((meal) => meal.foodNameAr).join('، ') || 'لا يوجد تسجيل'}؛ إجمالي تقريبي ${mealCalories} سعر و${mealProtein} جم بروتين.`,
+    `خطة الوجبات المتبقية: ${(context.plannedMeals ?? []).map((meal) => `${meal.title} (${meal.calories} سعر/${meal.protein} جم بروتين)`).join('، ') || 'غير متاحة'}.`,
+    `أحداث اليوم: ${(context.eventsToday ?? []).map((event) => eventNames[event.type] || event.type).join('، ') || 'لا توجد أحداث مسجلة'}.`,
+    `الأكل المتاح: ${context.availableFoods.map((food) => food.nameAr).slice(0, 30).join('، ') || 'غير محدد'}.`,
+    `الأكل المتكرر: ${context.frequentFoods.map((food) => food.nameAr).slice(0, 12).join('، ') || 'غير محدد'}.`,
+    `الخطوات القادمة: ${context.nextTaskTitles.join('، ') || 'لا توجد'}.`,
+    'في أي سؤال طبي: قدّم معلومات عامة محافظة، لا تشخّص، واذكر متى يحتاج المستخدم طبيبًا أو طوارئ. لا تقل أبدًا إنك الدكتور الخاص به.',
+  ].join('\n')
+}
+
+async function askRemoteAi(question: string, context: CoachQuestionContext, config: CoachAiConfig) {
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      temperature: 0.25,
+      messages: [
+        { role: 'system', content: buildSystemPrompt(context) },
+        { role: 'user', content: question },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    let detail = ''
+    try {
+      const errorBody = await response.json() as { error?: string }
+      detail = errorBody.error ? ` — ${errorBody.error}` : ''
+    } catch {
+      // Keep the status-only error when the server did not return JSON.
+    }
+    throw new Error(`AI request failed: ${response.status}${detail}`)
+  }
+  const data = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>
+    output_text?: string
+    text?: string
+  }
+  const text = data.text ?? data.choices?.[0]?.message?.content ?? data.output_text
+  if (!text?.trim()) throw new Error('Empty AI response')
+  return text.trim()
+}
+
+export async function askSmartCoach(question: string, context: CoachQuestionContext): Promise<CoachReply> {
+  const localText = answerCoachLocally(question, context)
+  const config = getCoachAiConfig()
+
+  if (!config.enabled || !config.endpoint.trim()) {
+    return { text: localText, source: 'local' }
+  }
+
+  try {
+    const text = await askRemoteAi(question, context, config)
+    return { text, source: 'ai' }
+  } catch (error) {
+    return {
+      text: localText,
+      source: 'local',
+      fallbackReason: error instanceof Error ? error.message : 'تعذر الاتصال بخدمة AI',
+    }
+  }
+}
