@@ -24,6 +24,7 @@ interface NutritionRequest {
 }
 
 const DEFAULT_TEXT_MODEL = '@cf/zai-org/glm-4.7-flash'
+const FALLBACK_TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast'
 const DEFAULT_STRUCTURED_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 const FOOD_CATEGORIES = ['protein', 'carb', 'dairy', 'fruit', 'fat', 'vegetable', 'meal', 'treat'] as const
 
@@ -67,16 +68,26 @@ function withCors(response: Response, origin: string | null) {
   })
 }
 
+function contentToText(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (!Array.isArray(value)) return ''
+  return value.map((item) => {
+    if (typeof item === 'string') return item
+    if (!item || typeof item !== 'object') return ''
+    const record = item as Record<string, unknown>
+    return typeof record.text === 'string' ? record.text : typeof record.content === 'string' ? record.content : ''
+  }).filter(Boolean).join('\n').trim()
+}
+
 function asText(value: unknown): string {
   if (typeof value === 'string') return value.trim()
   if (!value || typeof value !== 'object') return ''
   const record = value as Record<string, unknown>
-  if (typeof record.response === 'string') return record.response.trim()
-  if (typeof record.output_text === 'string') return record.output_text.trim()
-  if (typeof record.text === 'string') return record.text.trim()
+  const direct = contentToText(record.response) || contentToText(record.output_text) || contentToText(record.text)
+  if (direct) return direct
   const choices = Array.isArray(record.choices) ? record.choices : []
-  const first = choices[0] as { message?: { content?: string } } | undefined
-  return first?.message?.content?.trim() ?? ''
+  const first = choices[0] as { message?: { content?: unknown }; text?: unknown } | undefined
+  return contentToText(first?.message?.content) || contentToText(first?.text)
 }
 
 function asStructured(value: unknown): Record<string, unknown> | null {
@@ -125,6 +136,61 @@ async function runExternalFallback(env: Env, messages: Array<{ role: string; con
   return text
 }
 
+
+async function runWorkersText(
+  env: Env,
+  messages: Array<{ role: string; content: string }>,
+  maxTokens = 700,
+) {
+  if (!env.AI) throw new Error('Cloudflare Workers AI binding is not configured.')
+  const requestedModel = env.AI_TEXT_MODEL || DEFAULT_TEXT_MODEL
+  const candidates = [...new Set([requestedModel, DEFAULT_TEXT_MODEL, FALLBACK_TEXT_MODEL])]
+  let lastError: unknown
+
+  for (const model of candidates) {
+    try {
+      const result = await env.AI.run(model, {
+        messages,
+        temperature: 0.25,
+        max_tokens: maxTokens,
+      })
+      const text = asText(result)
+      if (!text) throw new Error('Empty AI response')
+      return { text, model }
+    } catch (error) {
+      lastError = error
+      console.error('Workers AI model failed', {
+        model,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('All Workers AI models failed')
+}
+
+async function handleAiTest(env: Env) {
+  if (!env.AI && !(env.AI_API_ENDPOINT && env.AI_API_KEY)) {
+    return json({ ok: false, error: 'AI is not configured' }, 503)
+  }
+  try {
+    if (env.AI) {
+      const result = await runWorkersText(env, [
+        { role: 'system', content: 'أجب بكلمة «تم» فقط.' },
+        { role: 'user', content: 'اختبار اتصال.' },
+      ], 20)
+      return json({ ok: true, text: result.text, provider: 'cloudflare-workers-ai', model: result.model })
+    }
+    const text = await runExternalFallback(env, [{ role: 'user', content: 'Reply with OK only.' }])
+    return json({ ok: true, text, provider: 'external', model: env.AI_MODEL || 'external' })
+  } catch (error) {
+    return json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'AI model test failed',
+    }, 503)
+  }
+}
+
 async function handleCoach(request: Request, env: Env) {
   let body: CoachRequest
   try {
@@ -152,19 +218,12 @@ async function handleCoach(request: Request, env: Env) {
   const finalMessages = [{ role: 'system', content: safetyPrompt }, ...messages]
 
   try {
-    let text = ''
     if (env.AI) {
-      const result = await env.AI.run(env.AI_TEXT_MODEL || DEFAULT_TEXT_MODEL, {
-        messages: finalMessages,
-        temperature: 0.25,
-        max_completion_tokens: 700,
-      })
-      text = asText(result)
-    } else {
-      text = await runExternalFallback(env, finalMessages)
+      const result = await runWorkersText(env, finalMessages, 700)
+      return json({ text: result.text, provider: 'cloudflare-workers-ai', model: result.model })
     }
-    if (!text) throw new Error('Empty AI response')
-    return json({ text, provider: env.AI ? 'cloudflare-workers-ai' : 'external' })
+    const text = await runExternalFallback(env, finalMessages)
+    return json({ text, provider: 'external', model: env.AI_MODEL || 'external' })
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'AI request failed' }, 503)
   }
@@ -276,6 +335,10 @@ export default {
           textModel: env.AI_TEXT_MODEL || DEFAULT_TEXT_MODEL,
           structuredModel: env.AI_STRUCTURED_MODEL || DEFAULT_STRUCTURED_MODEL,
         })
+      } else if (url.pathname === '/api/ai/test') {
+        response = request.method === 'POST'
+          ? await handleAiTest(env)
+          : json({ error: 'Method not allowed. Send a POST request.' }, 405)
       } else if (url.pathname === '/api/coach') {
         response = request.method === 'POST'
           ? await handleCoach(request, env)

@@ -496,7 +496,7 @@ useEffect(() => {
         createdAt: new Date().toISOString(),
         text: reply.text,
       })
-      if (reply.fallbackReason) setCoachError('تعذر الاتصال بخدمة AI، فتم استخدام المحرك المحلي بدلًا منها.')
+      if (reply.fallbackReason) setCoachError(`تم استخدام المحرك المحلي لأن خدمة AI لم ترد: ${reply.fallbackReason}`)
     } catch {
       setCoachError('حصل خطأ أثناء تجهيز الرد. جرّب تاني.')
     } finally {

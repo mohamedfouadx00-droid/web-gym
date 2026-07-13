@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FocusEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { AlarmClock, Bell, Bot, Clock3, Download, MapPin, Moon, Pill, RotateCcw, Save, ShieldCheck, Trash2, Upload, Volume2, Wifi, WifiOff } from 'lucide-react'
+import { AlarmClock, Bell, Bot, CheckCircle2, CircleAlert, Clock3, Download, LoaderCircle, MapPin, Moon, Pill, RotateCcw, Save, ShieldCheck, Trash2, Upload, Volume2, Wifi, WifiOff } from 'lucide-react'
 import { appSettings, db } from '../../data/db'
 import {
   creatineRepo,
@@ -26,7 +26,15 @@ import type {
 } from '../../domain/models'
 import { logMasturbation } from '../../services/dayManagerService'
 import { regenerateDailyPlan } from '../../services/planService'
-import { getCoachAiConfig, saveCoachAiConfig } from '../../services/smartCoachService'
+import {
+  checkCoachAiStatus,
+  DEFAULT_CLOUDFLARE_COACH_ENDPOINT,
+  formatAiFailureReason,
+  getCoachAiConfig,
+  normalizeCoachEndpoint,
+  saveCoachAiConfig,
+  testCoachAiConnection,
+} from '../../services/smartCoachService'
 import { captureDayUndoSnapshot, restoreDayUndoSnapshot, type DayUndoSnapshot } from '../../services/dayUndoService'
 import { createBackup, importBackup, parseBackup, type AppBackup, type BackupSummary } from '../../services/backupService'
 import { getPrayerLocationPermissionStatus, getPrayerSettings, PRAYER_CITY_PRESETS, requestPrayerLocationPermission, savePrayerSettings, type PrayerLocationPermissionStatus, type PrayerSettings } from '../../services/prayerTimesService'
@@ -98,9 +106,9 @@ export default function MorePage() {
   const [notificationHistory, setNotificationHistory] = useState(() => getNotificationHistory())
   const initialAiConfig = useMemo(() => getCoachAiConfig(), [])
   const [aiEnabled, setAiEnabled] = useState(initialAiConfig.enabled)
-  const [aiEndpoint, setAiEndpoint] = useState(
-    nativeAndroid && initialAiConfig.endpoint.startsWith('/') ? '' : initialAiConfig.endpoint,
-  )
+  const [aiEndpoint, setAiEndpoint] = useState(initialAiConfig.endpoint)
+  const [aiConnectionState, setAiConnectionState] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
+  const [aiConnectionMessage, setAiConnectionMessage] = useState('')
   const aiModel = 'cloudflare-workers-ai'
   const [notificationMessage, setNotificationMessage] = useState('')
   const [saved, setSaved] = useState(false)
@@ -159,6 +167,33 @@ export default function MorePage() {
     void getPrayerLocationPermissionStatus().then(setLocationPermission).catch(() => undefined)
   }, [nativeAndroid])
 
+
+  useEffect(() => {
+    if (!aiEnabled) {
+      setAiConnectionState('idle')
+      setAiConnectionMessage('')
+      return
+    }
+    let cancelled = false
+    void checkCoachAiStatus(aiEndpoint)
+      .then((status) => {
+        if (cancelled) return
+        if (status.ready) {
+          setAiConnectionState('ok')
+          setAiConnectionMessage('Cloudflare متصل. اضغط «اختبر الموديل» للتأكد من الرد الفعلي.')
+        } else {
+          setAiConnectionState('error')
+          setAiConnectionMessage('Cloudflare يعمل لكن Workers AI Binding غير جاهز.')
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setAiConnectionState('error')
+        setAiConnectionMessage(formatAiFailureReason(error))
+      })
+    return () => { cancelled = true }
+  }, [aiEnabled])
+
   useEffect(() => {
     const refresh = () => setNotificationHistory(getNotificationHistory())
     window.addEventListener('gym-notification-history', refresh)
@@ -205,7 +240,8 @@ export default function MorePage() {
     && (!waist || (Number(waist) >= 40 && Number(waist) <= 220))
   )
   const creatineDoseValid = !creatineEnabled || (Number(creatineDose) >= 1 && Number(creatineDose) <= 10)
-  const aiConfigValid = !aiEnabled || !nativeAndroid || /^https:\/\/[^\s]+\/api\/coach\/?$/i.test(aiEndpoint.trim())
+  const normalizedAiEndpoint = useMemo(() => normalizeCoachEndpoint(aiEndpoint), [aiEndpoint])
+  const aiConfigValid = !aiEnabled || !nativeAndroid || /^https:\/\/[^\s]+\/api\/coach\/?$/i.test(normalizedAiEndpoint)
   const habitLoggedToday = events.some((event) => event.type === 'masturbation_logged')
 
   async function saveSettings() {
@@ -249,10 +285,12 @@ export default function MorePage() {
       }),
       ])
 
+      const endpointToSave = normalizeCoachEndpoint(aiEndpoint)
+      setAiEndpoint(endpointToSave)
       saveCoachAiConfig({
-      enabled: aiEnabled,
-      endpoint: aiEndpoint,
-      model: aiModel,
+        enabled: aiEnabled,
+        endpoint: endpointToSave,
+        model: aiModel,
       })
       savePrayerSettings(prayerSettings)
 
@@ -267,6 +305,24 @@ export default function MorePage() {
       setSettingsError('حصل خطأ أثناء الحفظ. بياناتك القديمة لم تُحذف؛ جرّب مرة أخرى.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function runAiConnectionTest() {
+    if (aiConnectionState === 'checking') return
+    const endpoint = normalizeCoachEndpoint(aiEndpoint)
+    setAiEndpoint(endpoint)
+    setAiConnectionState('checking')
+    setAiConnectionMessage('جاري اختبار Cloudflare والموديل الفعلي...')
+    try {
+      const result = await testCoachAiConnection(endpoint)
+      saveCoachAiConfig({ enabled: true, endpoint: result.endpoint, model: aiModel })
+      setAiEnabled(true)
+      setAiConnectionState('ok')
+      setAiConnectionMessage(`الاتصال ناجح — ${result.model}. الذكاء الاصطناعي جاهز داخل التطبيق.`)
+    } catch (error) {
+      setAiConnectionState('error')
+      setAiConnectionMessage(formatAiFailureReason(error))
     }
   }
 
@@ -830,19 +886,56 @@ export default function MorePage() {
           {aiEnabled && (
             <div className="ai-config-grid">
               {nativeAndroid && (
-                <label>
-                  رابط خدمة Cloudflare AI
+                <div className="ai-endpoint-block">
+                  <label htmlFor="cloudflare-ai-endpoint">رابط خدمة Cloudflare AI</label>
                   <input
+                    id="cloudflare-ai-endpoint"
+                    className="ai-endpoint-input"
                     dir="ltr"
                     inputMode="url"
-                    placeholder="https://web-gym.example.workers.dev/api/coach"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder={DEFAULT_CLOUDFLARE_COACH_ENDPOINT}
                     value={aiEndpoint}
-                    onChange={(event) => setAiEndpoint(event.target.value.trim())}
+                    onChange={(event) => {
+                      setAiEndpoint(event.target.value)
+                      setAiConnectionState('idle')
+                      setAiConnectionMessage('')
+                    }}
+                    onBlur={() => setAiEndpoint(normalizeCoachEndpoint(aiEndpoint))}
                   />
+                  <code className="ai-endpoint-preview" dir="ltr">{normalizedAiEndpoint}</code>
                   <small className={aiConfigValid ? 'field-hint' : 'field-error'}>
-                    انسخ رابط تطبيقك المنشور على Cloudflare وأضف له /api/coach. التطبيق لا يحفظ أي API Key.
+                    الرابط مضبوط تلقائيًا على مشروعك. لا تضع API Key داخل التطبيق.
                   </small>
-                </label>
+                  <div className="ai-connection-actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setAiEndpoint(DEFAULT_CLOUDFLARE_COACH_ENDPOINT)
+                        setAiConnectionState('idle')
+                        setAiConnectionMessage('تم وضع الرابط الصحيح. اضغط اختبار الموديل.')
+                      }}
+                    >
+                      استخدم الرابط الصحيح
+                    </Button>
+                    <Button type="button" onClick={() => void runAiConnectionTest()} disabled={aiConnectionState === 'checking'}>
+                      {aiConnectionState === 'checking' ? <><LoaderCircle className="spin" size={17} /> جاري الاختبار</> : <><Wifi size={17} /> اختبر الموديل</>}
+                    </Button>
+                  </div>
+                  {aiConnectionMessage && (
+                    <div className={`ai-connection-status ${aiConnectionState}`}>
+                      {aiConnectionState === 'checking'
+                        ? <LoaderCircle className="spin" size={18} />
+                        : aiConnectionState === 'ok'
+                          ? <CheckCircle2 size={18} />
+                          : <CircleAlert size={18} />}
+                      <span>{aiConnectionMessage}</span>
+                    </div>
+                  )}
+                </div>
               )}
               <p className="safety-note">لا تحتاج إلى وضع API Key داخل التطبيق. الاتصال يتم من خلال AI Binding آمن في Cloudflare، لذلك المفتاح لا يظهر للمستخدم ولا داخل ملفات الموقع.</p>
               <p className="field-hint">الذكاء الاصطناعي يقرأ الملف الشخصي وبيانات اليوم المسجلة، لكنه لا يشخّص أمراضًا ولا يصف أدوية، ولا يقدم أسماء تمارين أو جداول أو مجموعات وتكرارات.</p>

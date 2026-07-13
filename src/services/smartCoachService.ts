@@ -2,9 +2,11 @@ import { goalLabels } from '../domain/dailyCoach'
 import type { DayEvent, FoodCatalogItem, MealLog, UserPreferences, UserProfile } from '../domain/models'
 import type { SmartDaySnapshot } from './smartEngineService'
 import { locationLabel, seasonLabel } from './smartEngineService'
+import { describeAiHttpError, requestAiJson } from './aiHttpService'
+import { Capacitor } from '@capacitor/core'
 
 export interface CoachAiConfig {
-  version: 2
+  version: 3
   enabled: boolean
   endpoint: string
   model: string
@@ -28,28 +30,114 @@ export interface CoachReply {
   fallbackReason?: string
 }
 
+export const CLOUDFLARE_APP_ORIGIN = 'https://web-gym.mohamedfouadx00.workers.dev'
+export const DEFAULT_CLOUDFLARE_COACH_ENDPOINT = `${CLOUDFLARE_APP_ORIGIN}/api/coach`
+const AI_CONFIG_STORAGE_KEY = 'gym.coachAiConfig'
+
+function defaultCoachEndpoint() {
+  return Capacitor.isNativePlatform() ? DEFAULT_CLOUDFLARE_COACH_ENDPOINT : '/api/coach'
+}
+
+export function normalizeCoachEndpoint(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return defaultCoachEndpoint()
+  if (trimmed.startsWith('/')) return Capacitor.isNativePlatform() ? DEFAULT_CLOUDFLARE_COACH_ENDPOINT : '/api/coach'
+
+  try {
+    const url = new URL(trimmed)
+    if (url.protocol !== 'https:' && url.hostname !== 'localhost') return DEFAULT_CLOUDFLARE_COACH_ENDPOINT
+    url.hash = ''
+    url.search = ''
+    const path = url.pathname.replace(/\/+$/, '')
+    if (!path || path === '/') url.pathname = '/api/coach'
+    else if (/\/api\/(?:ai\/status|ai\/test|nutrition\/estimate)$/i.test(path)) url.pathname = '/api/coach'
+    else if (!/\/api\/coach$/i.test(path)) url.pathname = `${path}/api/coach`.replace(/\/{2,}/g, '/')
+    else url.pathname = path
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return DEFAULT_CLOUDFLARE_COACH_ENDPOINT
+  }
+}
+
 const defaultConfig: CoachAiConfig = {
-  version: 2,
+  version: 3,
   enabled: true,
-  endpoint: '/api/coach',
+  endpoint: defaultCoachEndpoint(),
   model: 'cloudflare-workers-ai',
 }
 
 export function getCoachAiConfig(): CoachAiConfig {
-  if (typeof localStorage === 'undefined') return defaultConfig
+  const fallback = { ...defaultConfig, endpoint: defaultCoachEndpoint() }
+  if (typeof localStorage === 'undefined') return fallback
   try {
-    const raw = localStorage.getItem('gym.coachAiConfig')
-    if (!raw) return defaultConfig
+    const raw = localStorage.getItem(AI_CONFIG_STORAGE_KEY)
+    if (!raw) return fallback
     const parsed = JSON.parse(raw) as Partial<CoachAiConfig> & { version?: number }
-    if (parsed.version !== 2) return defaultConfig
-    return { ...defaultConfig, ...parsed, version: 2 }
+    const migrated: CoachAiConfig = {
+      ...fallback,
+      ...parsed,
+      version: 3,
+      endpoint: normalizeCoachEndpoint(String(parsed.endpoint ?? fallback.endpoint)),
+    }
+    if (parsed.version !== 3 || parsed.endpoint !== migrated.endpoint) {
+      localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(migrated))
+    }
+    return migrated
   } catch {
-    return defaultConfig
+    return fallback
   }
 }
 
 export function saveCoachAiConfig(config: Omit<CoachAiConfig, 'version'> | CoachAiConfig) {
-  localStorage.setItem('gym.coachAiConfig', JSON.stringify({ ...config, version: 2 }))
+  const normalized: CoachAiConfig = {
+    ...config,
+    endpoint: normalizeCoachEndpoint(config.endpoint),
+    version: 3,
+  }
+  localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(normalized))
+}
+
+function endpointFor(endpoint: string, route: 'status' | 'test' | 'nutrition') {
+  const coach = normalizeCoachEndpoint(endpoint)
+  const suffix = route === 'status' ? '/api/ai/status' : route === 'test' ? '/api/ai/test' : '/api/nutrition/estimate'
+  return coach.replace(/\/api\/coach\/?$/i, suffix)
+}
+
+export async function checkCoachAiStatus(endpoint = getCoachAiConfig().endpoint) {
+  return requestAiJson<{
+    ready: boolean
+    provider?: string
+    textModel?: string
+    structuredModel?: string
+  }>({
+    url: endpointFor(endpoint, 'status'),
+    method: 'GET',
+    timeoutMs: 20_000,
+  })
+}
+
+export async function testCoachAiConnection(endpoint = getCoachAiConfig().endpoint) {
+  const normalizedEndpoint = normalizeCoachEndpoint(endpoint)
+  const status = await checkCoachAiStatus(normalizedEndpoint)
+  if (!status.ready) throw new Error('Workers AI Binding غير جاهز على Cloudflare.')
+  const probe = await requestAiJson<{ ok?: boolean; text?: string; provider?: string; model?: string }>({
+    url: endpointFor(normalizedEndpoint, 'test'),
+    method: 'POST',
+    data: {},
+    timeoutMs: 70_000,
+  })
+  if (!probe.ok && !probe.text) throw new Error('Cloudflare متصل لكن الموديل لم يُرجع نتيجة اختبار.')
+  return {
+    ok: true,
+    provider: probe.provider || status.provider || 'Cloudflare Workers AI',
+    model: probe.model || status.textModel || 'Workers AI',
+    text: probe.text || 'تم الاتصال بنجاح',
+    endpoint: normalizedEndpoint,
+  }
+}
+
+export function formatAiFailureReason(error: unknown) {
+  return describeAiHttpError(error)
 }
 
 function normalizeArabic(value: string) {
@@ -216,37 +304,24 @@ function buildSystemPrompt(context: CoachQuestionContext) {
 }
 
 async function askRemoteAi(question: string, context: CoachQuestionContext, config: CoachAiConfig) {
-  const response = await fetch(config.endpoint, {
+  const data = await requestAiJson<{
+    choices?: Array<{ message?: { content?: string } }>
+    output_text?: string
+    text?: string
+  }>({
+    url: normalizeCoachEndpoint(config.endpoint),
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+    data: {
       temperature: 0.25,
       messages: [
         { role: 'system', content: buildSystemPrompt(context) },
         { role: 'user', content: question },
       ],
-    }),
+    },
+    timeoutMs: 75_000,
   })
-
-  if (!response.ok) {
-    let detail = ''
-    try {
-      const errorBody = await response.json() as { error?: string }
-      detail = errorBody.error ? ` — ${errorBody.error}` : ''
-    } catch {
-      // Keep the status-only error when the server did not return JSON.
-    }
-    throw new Error(`AI request failed: ${response.status}${detail}`)
-  }
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string } }>
-    output_text?: string
-    text?: string
-  }
   const text = data.text ?? data.choices?.[0]?.message?.content ?? data.output_text
-  if (!text?.trim()) throw new Error('Empty AI response')
+  if (!text?.trim()) throw new Error('خدمة الذكاء الاصطناعي أعادت ردًا فارغًا.')
   return text.trim()
 }
 
@@ -265,7 +340,7 @@ export async function askSmartCoach(question: string, context: CoachQuestionCont
     return {
       text: localText,
       source: 'local',
-      fallbackReason: error instanceof Error ? error.message : 'تعذر الاتصال بخدمة AI',
+      fallbackReason: formatAiFailureReason(error),
     }
   }
 }

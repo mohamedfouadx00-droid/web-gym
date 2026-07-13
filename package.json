@@ -1,7 +1,7 @@
 {
   "name": "gym-arabic-men-pwa",
   "private": true,
-  "version": "23.1.0",
+  "version": "24.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,14 +15,14 @@
     "@capacitor/android": "^8.4.1",
     "@capacitor/app": "^8.0.1",
     "@capacitor/core": "^8.4.1",
+    "@capacitor/geolocation": "^8.1.0",
     "@capacitor/local-notifications": "^8.2.0",
     "dexie": "^4.0.8",
     "dexie-react-hooks": "^1.1.7",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.1.1",
-    "@capacitor/geolocation": "^8.1.0"
+    "react-router-dom": "^7.1.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.1",
@@ -31,6 +31,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.6.3",
     "vite": "^6.0.5",
-    "vite-plugin-pwa": "^0.21.1"
+    "vite-plugin-pwa": "^0.21.1",
+    "wrangler": "^4.110.0"
   }
 }
